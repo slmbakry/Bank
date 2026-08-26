@@ -9,6 +9,28 @@
 <title>Banks — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+// لو الـCDN الأساسي مقفول، نجرّب مصادر تانية قبل ما نستسلم
+window.__sbSources = [
+  'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
+  'https://cdn.skypack.dev/@supabase/supabase-js@2/dist/umd/supabase.js',
+  'https://esm.sh/@supabase/supabase-js@2/dist/umd/supabase.js'
+];
+window.loadSupabase = function(){
+  return new Promise(resolve=>{
+    if(window.supabase && window.supabase.createClient) return resolve(true);
+    const list = window.__sbSources.slice();
+    (function next(){
+      if(!list.length) return resolve(false);
+      const sc=document.createElement('script');
+      sc.src=list.shift();
+      sc.onload =()=> (window.supabase && window.supabase.createClient) ? resolve(true) : next();
+      sc.onerror=()=> next();
+      document.head.appendChild(sc);
+    })();
+  });
+};
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
@@ -1593,6 +1615,14 @@ function toggleMenu(e,id){
   if(t && !wasOpen) t.classList.remove('hidden');
 }
 document.addEventListener('click',closeMenus);
+// أي خطأ غير متوقع يظهر للمستخدم بدل ما الزر يفضل ميت
+window.addEventListener('error', e=>{
+  const gate=document.getElementById('loginGate');
+  if(gate && !gate.classList.contains('hidden')){
+    const box=document.getElementById('loginMsg');
+    if(box){ box.textContent='حصل خطأ: '+(e.message||'غير معروف'); box.classList.remove('hidden'); }
+  }
+});
 document.addEventListener('keydown', e=>{
   if(e.key!=='Escape') return;
   const open=['txnFormModal','modal','curAdminModal','bankFormModal','settingsModal']
@@ -1816,35 +1846,4 @@ function tafqeet(n){
       }
     }
   });
-  if(rest) out.push(under1000(rest));
-  return out.join(' و');
-}
-function amountWords(v){
-  const num=Number(v)||0;
-  const pounds=Math.floor(num);
-  const pt=Math.round((num-pounds)*100);
-  let s='فقط '+tafqeet(pounds)+' جنيه مصري';
-  if(pt>0) s+=' و'+tafqeet(pt)+' قرش';
-  return s+' لا غير';
-}
-function splitWords(txt,maxLen){
-  if(txt.length<=maxLen) return [txt,''];
-  let cut=txt.lastIndexOf(' ',maxLen);
-  if(cut<=0) cut=maxLen;
-  return [txt.slice(0,cut), txt.slice(cut+1)];
-}
-function fmtChequeDate(iso){
-  if(!iso) return '';
-  const a=iso.split('-');
-  return a[2]+' / '+a[1]+' / '+a[0];
-}
-
-
-function crossHTML(f,text,tplW,unit){
-  const lenPct=(Number(f.len)||26)/(Number(tplW)||175)*100;
-  const ang=Number(f.angle)||60;
-  const fs=(f.size||7)+(unit||'pt');
-  const line='<div style="width:100%;border-top:1.2pt solid #000;"></div>';
-  const txt= text ? '<div style="font-size:'+fs+';color:#000;white-space:nowrap;line-height:1.1;padding:1px 0;">'+text+'</div>' : '<div style="height:5px;"></div>';
-  return '<div style="position:absolute;left:'+f.x+'%;top:'+f.y+'%;width:'+lenPct+'%;'+
-    'transform:translate(-50%,-50%) rotate(-'+ang+'deg);text-align:center;">'+line+txt+line+'</div>
+  if(rest) out.pu
