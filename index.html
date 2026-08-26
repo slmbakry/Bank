@@ -88,23 +88,6 @@
   </div>
 </div>
 
-<!-- ===== PASSWORD MODAL ===== -->
-<div id="pwdModal" class="fixed inset-0 bg-black/50 z-[110] hidden items-center justify-center p-4 no-print" onclick="if(event.target===this)closePwdModal()">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-    <div class="flex items-center justify-between mb-1">
-      <h2 id="pwdTitle" class="text-lg font-extrabold text-slate-800">تغيير كلمة السر</h2>
-      <button id="pwdClose" onclick="closePwdModal()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
-    </div>
-    <p id="pwdHint" class="text-xs text-slate-500 mb-4">اكتب كلمة سر جديدة (٦ حروف على الأقل).</p>
-    <div id="pwdMsg" class="hidden text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
-    <label class="block text-xs font-bold text-slate-600 mb-1">كلمة السر الجديدة</label>
-    <input id="pwd1" type="password" autocomplete="new-password" dir="ltr" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-slate-400">
-    <label class="block text-xs font-bold text-slate-600 mb-1">تأكيد كلمة السر</label>
-    <input id="pwd2" type="password" autocomplete="new-password" dir="ltr" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-4 outline-none focus:ring-2 focus:ring-slate-400">
-    <button id="pwdBtn" onclick="savePassword()" class="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-bold">حفظ</button>
-  </div>
-</div>
-
 <div id="appRoot" class="hidden max-w-7xl mx-auto p-4 md:p-6">
 
   <!-- Header -->
@@ -145,7 +128,6 @@
             <input type="file" accept=".json" class="hidden" onchange="closeMoreMenu();importBackup(event)">
           </label>
           <button onclick="closeMoreMenu();repairUpload()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-amber-700 hover:bg-amber-50">🔧 رفع الناقص</button>
-          <button onclick="closeMoreMenu();openPwdModal()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">🔑 تغيير كلمة السر</button>
           <div class="border-t border-slate-100 mt-1 pt-1">
             <button onclick="closeMoreMenu();doLogout()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50">↪ تسجيل الخروج</button>
           </div>
@@ -176,7 +158,8 @@
       <div class="flex items-center gap-2 flex-wrap mb-2">
         <button onclick="backToBanks()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-bold">‹ كل البنوك</button>
         <span id="ledgerTitle" class="text-base font-extrabold text-slate-800"></span>
-        <select id="bankSwitch" onchange="openBank(this.value, currentTab)" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white mr-auto"></select>
+        <select id="bankSwitch" onchange="currentCur=''; openBank(this.value, currentTab)" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white mr-auto"></select>
+        <select id="curSwitch" onchange="openAcct(currentBank, this.value, currentTab)" class="hidden border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white font-bold"></select>
         <button onclick="openBankForm(currentBank||null)" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold">إدارة البنك</button>
       </div>
       <div class="flex items-end gap-1">
@@ -485,7 +468,11 @@
       </div>
       <div>
         <label class="block text-xs font-bold text-slate-600 mb-1">البنك</label>
-        <select id="fld_bank" onchange="fillSignerSelect()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-slate-400"></select>
+        <select id="fld_bank" onchange="fillSignerSelect(); fillCurSelect()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-slate-400"></select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">عملة الشيك *</label>
+        <select id="fld_currency" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-slate-400"></select>
       </div>
       <div>
         <label class="block text-xs font-bold text-slate-600 mb-1" data-lbl="purpose">الغرض</label>
@@ -706,6 +693,7 @@ function getFiltered(){
   const to=document.getElementById('fTo').value;
   return checks.filter(c=>{
     if(currentBank && bankKey(c.bank)!==bankKey(currentBank)) return false;
+    if(currentBank && currentCur && curOf(c)!==currentCur) return false;
     if(selStatus.length && !selStatus.includes(c.status)) return false;
     if(selPurpose.length){
       const keys=selPurpose.map(normAr);
@@ -896,7 +884,8 @@ function renderRateSummary(){
 function renderCurBoxes(){
   const g=document.getElementById('curGrid'); if(!g) return;
   const b = currentBank ? banks[currentBank] : null;
-  const codes = b ? bankCurs(b) : [];
+  let codes = b ? bankCurs(b) : [];
+  if(currentBank && currentCur) codes = codes.filter(c=>c===currentCur);
   if(!currentBank){
     g.style.gridTemplateColumns='1fr';
     g.innerHTML='<div class="text-center text-xs text-slate-400 py-2">اختَر بنكًا لإدخال أرصدته — الأرقام تحت مجمّعة لكل البنوك</div>';
@@ -1096,7 +1085,10 @@ function coverageCalc(){
   const src = currentBank ? [currentBank] : bankNames();
   src.forEach(n=>{
     const b=banks[n]; if(!b) return;
-    bankCurs(b).forEach(code=>{
+    let codes=bankCurs(b);
+    // جوّه حساب محدد: عملته بس، والمقارنة بتبقى عادلة من غير تحويل
+    if(currentBank && currentCur) codes=codes.filter(c=>c===currentCur);
+    codes.forEach(code=>{
       if(String(bankBal(b,code)).trim()!=='') entered=true;
       const v=bankBalNum(b,code);
       byCur[code]=(byCur[code]||0)+v;
@@ -1246,6 +1238,16 @@ function fillBankSelect(val){
   if(hit) el.value=hit;
   else if(val){ el.innerHTML+='<option value="'+val+'">'+val+'</option>'; el.value=val; }
 }
+function fillCurSelect(selected){
+  const sel=document.getElementById('fld_currency'); if(!sel) return;
+  const bank=(document.getElementById('fld_bank')||{}).value||'';
+  const cur = (selected!==undefined) ? String(selected||'') : (sel.value||'');
+  let codes=bankCurs(banks[bank]);
+  if(!codes.length) codes=[BASE_CUR];
+  if(cur && !codes.includes(cur)) codes=codes.concat([cur]);
+  sel.innerHTML=codes.map(c=>'<option value="'+c+'">'+curBy(c).nameAr+' ('+curBy(c).symbol+')</option>').join('');
+  sel.value = (cur && codes.includes(cur)) ? cur : (codes.includes(BASE_CUR)? BASE_CUR : codes[0]);
+}
 function fillSignerSelect(selected){
   const sel=document.getElementById('fld_location'); if(!sel) return;
   const bank=(document.getElementById('fld_bank')||{}).value||'';
@@ -1263,6 +1265,7 @@ function openForm(){
   ['id','checkNumber','beneficiaryName','unit','amount','purpose','location','note'].forEach(f=>document.getElementById('fld_'+f).value='');
   fillBankSelect('');
   fillSignerSelect('');
+  fillCurSelect(currentCur||BASE_CUR);
   document.getElementById('fld_purpose').value=(cfg.purposes&&cfg.purposes[0])||'إيجار';
   document.getElementById('fld_status').value='مستحق';
   document.getElementById('fld_issueDate').value='';
@@ -1277,6 +1280,7 @@ function editCheck(id){
   ['id','checkNumber','bank','beneficiaryName','purpose','unit','note','amount','issueDate','dueDate','cashedDate','status']
     .forEach(f=>document.getElementById('fld_'+f).value = c[f]||'');
   fillSignerSelect(c.location||'');
+  fillCurSelect(c.currency||BASE_CUR);
   showModal();
 }
 function saveCheck(){
@@ -1298,7 +1302,8 @@ function saveCheck(){
     issueDate:document.getElementById('fld_issueDate').value,
     dueDate:due,
     cashedDate:document.getElementById('fld_cashedDate').value,
-    status:document.getElementById('fld_status').value
+    status:document.getElementById('fld_status').value,
+    currency:(document.getElementById('fld_currency').value||BASE_CUR)
   };
   const i=checks.findIndex(x=>x.id===obj.id);
   if(i>=0) checks[i]=obj; else checks.push(obj);
@@ -1430,7 +1435,7 @@ function importBackup(e){
 }
 
 // ---------- Excel ----------
-const HEADERS=['تاريخ الكتابة','تاريخ استحقاق الصرف','تاريخ الصرف الفعلي','رقم الشيك','المبلغ','الاسم','البنك','توقيع','البيان','الغرض','الوحدة / الوحدات','الحالة'];
+const HEADERS=['تاريخ الكتابة','تاريخ استحقاق الصرف','تاريخ الصرف الفعلي','رقم الشيك','المبلغ','العملة','الاسم','البنك','توقيع','البيان','الغرض','الوحدة / الوحدات','الحالة'];
 
 function excelDateToStr(v){
   if(v===''||v==null) return '';
@@ -1486,7 +1491,7 @@ function importExcel(e){
 
 function buildSheet(list){
   const data=[HEADERS];
-  list.forEach(c=>data.push([c.issueDate,c.dueDate,c.cashedDate,c.checkNumber,c.amount,c.beneficiaryName,c.bank,c.location,c.note,c.purpose,c.unit,c.status]));
+  list.forEach(c=>data.push([c.issueDate,c.dueDate,c.cashedDate,c.checkNumber,c.amount,curBy(curOf(c)).nameAr,c.beneficiaryName,c.bank,c.location,c.note,c.purpose,c.unit,c.status]));
   const ws=XLSX.utils.aoa_to_sheet(data);
   ws['!cols']=HEADERS.map(()=>({wch:16}));
   return ws;
@@ -1589,12 +1594,12 @@ function toggleMoreMenu(e){
 }
 
 // ================= Excel / PDF لحركات الحساب =================
-const TXN_HEADERS=['التاريخ','البيان','نوع العملية','رقم الشيك / العملية','ملاحظات','وارد','منصرف','الحالة'];
+const TXN_HEADERS=['التاريخ','البيان','نوع العملية','رقم الشيك / العملية','ملاحظات','العملة','وارد','منصرف','الحالة'];
 const TXN_STATUS_AR={temp:'بانتظار المطابقة', confirmed:'مؤكدة'};
 
 function txnRowsAoA(list){
   return list.map(t=>[
-    t.date||'', t.desc||'', t.method||'', t.ref||'', t.notes||'',
+    t.date||'', t.desc||'', t.method||'', t.ref||'', t.notes||'', curBy(curOf(t)).nameAr,
     t.dir==='in'?(Number(t.amount)||0):'',
     t.dir==='out'?(Number(t.amount)||0):'',
     TXN_STATUS_AR[t.status]||'بانتظار المطابقة'
@@ -1602,7 +1607,7 @@ function txnRowsAoA(list){
 }
 function txnSheet(list){
   const ws=XLSX.utils.aoa_to_sheet([TXN_HEADERS].concat(txnRowsAoA(list)));
-  ws['!cols']=[{wch:12},{wch:28},{wch:16},{wch:18},{wch:30},{wch:14},{wch:14},{wch:16}];
+  ws['!cols']=[{wch:12},{wch:28},{wch:16},{wch:18},{wch:30},{wch:12},{wch:14},{wch:14},{wch:16}];
   return ws;
 }
 function downloadTxnTemplate(){
@@ -1643,7 +1648,7 @@ function importTxnsExcel(e){
         const st=hkey(String(pick(r,['الحالة'])||''));
         txns.push({
           id:'t'+Date.now()+Math.random().toString(36).slice(2,7),
-          bank:currentBank, date:d,
+          bank:currentBank, date:d, currency: currentCur||BASE_CUR,
           dir: inAmt? 'in':'out',
           amount: inAmt||outAmt,
           desc:String(pick(r,['البيان','الوصف'])||'حركة').trim()||'حركة',
@@ -2494,6 +2499,54 @@ function bankStats(name){
   return {list,due,overdue,codes,bal,avail,required,diff:avail-required,
           tpls:Object.values(templates).filter(t=>bankKey(t.bank||t.name)===bankKey(name)).length};
 }
+// ===== الحساب = بنك + عملة =====
+function curOf(o){ return (o && o.currency) || BASE_CUR; }
+
+// كل الحسابات المفتوحة: [{bank, cur}]
+function allAccounts(){
+  const out=[];
+  bankNamesSorted().forEach(n=>{
+    const codes=bankCurs(banks[n]);
+    (codes.length?codes:[BASE_CUR]).forEach(c=>out.push({bank:n, cur:c}));
+  });
+  return out;
+}
+function acctKey(bank,cur){ return bankKey(bank)+'|'+cur; }
+function checksOfAcct(bank,cur){
+  return checks.filter(c=>bankKey(c.bank)===bankKey(bank) && curOf(c)===cur);
+}
+function txnsOfAcct(bank,cur){
+  return txns.filter(t=>bankKey(t.bank)===bankKey(bank) && curOf(t)===cur);
+}
+function openingOfAcct(bank,cur){
+  const b=banks[bank]; if(!b) return 0;
+  const o=(b.openings&&b.openings[cur]!=null)? b.openings[cur]
+        : (cur===BASE_CUR ? (b.opening||'') : '');
+  return parseFloat(String(o).replace(/,/g,''))||0;
+}
+// إحصاءات حساب واحد — كلها بعملته، من غير أي تحويل
+function acctStats(bank,cur){
+  const list=checksOfAcct(bank,cur);
+  const due=list.filter(c=>c.status==='مستحق');
+  const overdue=due.filter(c=>urgency(c)==='overdue');
+  const b=banks[bank]||{};
+  const bal=bankBalNum(b,cur);
+  const required=sumAmount(due);
+  return {bank, cur, list, due, overdue, bal, required, diff: bal-required,
+          txnCount: txnsOfAcct(bank,cur).length};
+}
+// أرصدة كشف الحساب لحساب واحد
+function balancesOfAcct(bank,cur){
+  const list=txnsOfAcct(bank,cur);
+  const open=openingOfAcct(bank,cur);
+  const conf=list.filter(t=>t.status==='confirmed').reduce((s,t)=>s+signed(t),0);
+  const temp=list.filter(t=>t.status!=='confirmed').reduce((s,t)=>s+signed(t),0);
+  return {opening:open, confirmed:open+conf, expected:open+conf+temp,
+          pendingIn:list.filter(t=>t.status!=='confirmed'&&t.dir==='in').reduce((s,t)=>s+(+t.amount||0),0),
+          pendingOut:list.filter(t=>t.status!=='confirmed'&&t.dir==='out').reduce((s,t)=>s+(+t.amount||0),0),
+          count:list.length, pending:list.filter(t=>t.status!=='confirmed').length};
+}
+
 function bankSigners(name){
   const b=bankOf(name);
   return (b && Array.isArray(b.signers)) ? b.signers.filter(Boolean) : [];
@@ -2505,6 +2558,7 @@ function allSigners(){
   return Object.values(map);
 }
 function txnCountOf(name){ return txns.filter(t=>bankKey(t.bank)===bankKey(name)).length; }
+function openBankAcctTxns(n,c){ openAcct(n,c,'txns'); }
 function openBankTxns(name){ openBank(name,'txns'); }
 function bankNamesSorted(){
   return bankNames().slice().sort((a,b)=>{
@@ -2520,52 +2574,65 @@ function renderBanks(){
   if(!names.length){
     g.innerHTML='<div class="col-span-full text-center text-slate-400 text-sm py-10 bg-white rounded-xl">مفيش بنوك — اضغط «توحيد الأسماء» لاستخراجها من بياناتك، أو «+ بنك جديد»</div>';
   } else {
+    // كارت لكل حساب (بنك + عملة)، مجمّعين تحت عنوان كل بنك
+    g.className='space-y-4';
     g.innerHTML=names.map(n=>{
-      const st=bankStats(n);
+      const b=banks[n]||{};
       const esc=n.replace(/'/g,"\\'");
-      const tone = st.required===0 ? 'border-slate-200'
-        : st.diff>=0 ? 'border-emerald-300' : 'border-red-300';
-      const badge = st.required===0 ? '<span class="text-[11px] font-bold text-slate-400">لا مستحقات</span>'
-        : st.diff>=0 ? '<span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">فائض '+fmt(st.diff)+'</span>'
-                     : '<span class="text-[11px] font-bold text-red-700 bg-red-50 rounded px-1.5 py-0.5">عجز '+fmt(-st.diff)+'</span>';
-      return '<div class="bg-white rounded-xl shadow-sm border-2 '+tone+' p-4 hover:shadow-md transition cursor-pointer" onclick="openBank(\''+n.replace(/'/g,"\\'")+'\')">'+
-        '<div class="flex items-start justify-between gap-2 mb-2">'+
-          (banks[n].logo?'<img src="'+banks[n].logo+'" class="w-9 h-9 object-contain rounded shrink-0">':'')+
-          '<div class="font-extrabold text-slate-800 truncate flex-1">'+n+'</div>'+
-          '<button onclick="event.stopPropagation();openBankForm(\''+n.replace(/'/g,"\\'")+'\')" title="تعديل البنك" class="shrink-0 bg-slate-100 hover:bg-slate-800 hover:text-white text-slate-600 rounded-lg w-7 h-7 flex items-center justify-center text-xs">✎</button>'+
-        '</div>'+
-        '<div class="mb-2">'+badge+'</div>'+
-        (function(){
-          const codes=st.codes;
-          if(!codes.length) return '';
-          const cells=codes.map(code=>{
-            const c=curBy(code);
-            return '<div class="rounded-lg px-2 py-1.5" style="background:'+c.color+'14;border:1px solid '+c.color+'66;">'+
-              '<div class="text-[10px] font-bold" style="color:'+c.color+';">'+c.nameAr+'</div>'+
-              '<div class="text-sm font-extrabold num" style="color:'+c.color+';">'+fmt(st.bal[code])+'</div></div>';
-          });
-          return '<div class="grid gap-2 mb-2" style="grid-template-columns:repeat('+Math.min(cells.length,3)+',minmax(0,1fr));">'+cells.join('')+'</div>';
-        })()+
-        '<div class="flex items-center justify-between text-xs text-slate-500">'+
-          '<span>مستحق: <b class="text-slate-700 num">'+fmt(st.required)+'</b> ('+st.due.length+')</span>'+
-          (st.overdue.length?'<span class="text-red-600 font-bold">متأخر '+st.overdue.length+'</span>':'')+
-        '</div>'+
-        '<div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-100">'+
-          '<button onclick="event.stopPropagation();openBank(\''+esc+'\')" class="bg-slate-800 hover:bg-slate-900 text-white rounded-lg px-2 py-1.5 text-xs font-bold">📄 الشيكات'+(st.list.length?' ('+st.list.length+')':'')+'</button>'+
-          '<button onclick="event.stopPropagation();openBankTxns(\''+esc+'\')" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-2 py-1.5 text-xs font-bold">📒 الحركات'+(txnCountOf(n)?' ('+txnCountOf(n)+')':'')+'</button>'+
-        '</div>'+
-        '<div class="flex items-center justify-between text-[11px] text-slate-400 mt-1.5">'+
-          '<span>'+st.tpls+' قالب طباعة</span>'+
-          '<button onclick="event.stopPropagation();openBankForm(\''+esc+'\')" class="text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded px-2 py-0.5 font-bold">تعديل البنك</button>'+
-        '</div>'+
+      const codes=bankCurs(b);
+      const head='<div class="flex items-center gap-2 mb-2">'+
+        (b.logo?'<img src="'+b.logo+'" class="w-8 h-8 object-contain rounded shrink-0">':'')+
+        '<h3 class="font-extrabold text-slate-800 text-base">'+n+'</h3>'+
+        '<span class="text-[11px] text-slate-400">'+(codes.length||0)+' حساب</span>'+
+        '<button onclick="openBankForm(\''+esc+'\')" title="تعديل البنك" class="needs-admin mr-auto bg-slate-100 hover:bg-slate-800 hover:text-white text-slate-600 rounded-lg px-2 py-1 text-[11px] font-bold">✎ تعديل</button>'+
       '</div>';
+
+      if(!codes.length){
+        return '<div>'+head+'<div class="bg-white rounded-xl border-2 border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">مفيش عملات مفعّلة — افتح «تعديل» وحدّد عملات البنك</div></div>';
+      }
+
+      const cards=codes.map(code=>{
+        const st=acctStats(n, code);
+        const c=curBy(code);
+        const tone = st.required===0 ? 'border-slate-200' : st.diff>=0 ? 'border-emerald-300' : 'border-red-300';
+        const badge = st.required===0
+          ? '<span class="text-[11px] font-bold text-slate-400">لا مستحقات</span>'
+          : st.diff>=0
+            ? '<span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">فائض '+fmt(st.diff)+'</span>'
+            : '<span class="text-[11px] font-bold text-red-700 bg-red-50 rounded px-1.5 py-0.5">عجز '+fmt(-st.diff)+'</span>';
+        return '<div class="bg-white rounded-xl shadow-sm border-2 '+tone+' p-3 md:p-4 hover:shadow-md transition cursor-pointer" onclick="openAcct(\''+esc+'\',\''+code+'\')">'+
+          '<div class="flex items-center justify-between gap-2 mb-2">'+
+            '<span class="text-xs font-extrabold px-2 py-1 rounded-lg" style="background:'+c.color+'14;color:'+c.color+';">'+c.nameAr+'</span>'+
+            badge+
+          '</div>'+
+          '<div class="rounded-lg px-3 py-2 mb-2" style="background:'+c.color+'14;border:1px solid '+c.color+'55;">'+
+            '<div class="text-[10px] font-bold" style="color:'+c.color+';">الرصيد الحالي</div>'+
+            '<div class="text-lg font-extrabold num" style="color:'+c.color+';">'+fmt(st.bal)+' <span class="text-xs">'+c.symbol+'</span></div>'+
+          '</div>'+
+          '<div class="flex items-center justify-between text-xs text-slate-500 mb-2">'+
+            '<span>مستحق: <b class="text-slate-700 num">'+fmt(st.required)+'</b> ('+st.due.length+')</span>'+
+            (st.overdue.length?'<span class="text-red-600 font-bold">متأخر '+st.overdue.length+'</span>':'')+
+          '</div>'+
+          '<div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">'+
+            '<button onclick="event.stopPropagation();openAcct(\''+esc+'\',\''+code+'\',\'checks\')" class="bg-slate-800 hover:bg-slate-900 text-white rounded-lg px-2 py-1.5 text-xs font-bold">📄 الشيكات'+(st.list.length?' ('+st.list.length+')':'')+'</button>'+
+            '<button onclick="event.stopPropagation();openAcct(\''+esc+'\',\''+code+'\',\'txns\')" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-2 py-1.5 text-xs font-bold">📒 الحركات'+(st.txnCount?' ('+st.txnCount+')':'')+'</button>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+
+      return '<div>'+head+'<div class="grid grid-cols-1 md:grid-cols-2 gap-3">'+cards+'</div></div>';
     }).join('');
   }
-  // إجماليات
-  let tReq=0,tOver=0,tAvail=0; const totByCur={};
-  names.forEach(n=>{ const st=bankStats(n);
-    st.codes.forEach(c=>{ totByCur[c]=(totByCur[c]||0)+st.bal[c]; });
-    tAvail+=st.avail; tReq+=st.required; tOver+=st.overdue.length; });
+
+  // إجماليات (بالجنيه بعد التحويل)
+  let tReq=0, tOver=0, tAvail=0; const totByCur={};
+  allAccounts().forEach(a=>{
+    const st=acctStats(a.bank, a.cur);
+    totByCur[a.cur]=(totByCur[a.cur]||0)+st.bal;
+    tAvail += st.bal*curRate(a.cur);
+    tReq   += st.required*curRate(a.cur);
+    tOver  += st.overdue.length;
+  });
   const diff=tAvail-tReq;
   const breakdown=Object.keys(totByCur).filter(c=>totByCur[c])
     .map(c=>curBy(c).nameAr+' '+fmt(totByCur[c])).join(' + ');
@@ -2574,10 +2641,10 @@ function renderBanks(){
     '<p class="text-sm md:text-base font-extrabold text-slate-800 num leading-tight">'+v+'</p>'+
     (extra?'<p class="text-[10px] text-slate-400">'+extra+'</p>':'')+'</div>';
   document.getElementById('banksTotals').innerHTML=
-    card('إجمالي المتاح (كل البنوك)', fmt(tAvail)+' ج.م', breakdown,'border-sky-400')+
+    card('إجمالي المتاح (كل الحسابات)', fmt(tAvail)+' ج.م', breakdown,'border-sky-400')+
     card('إجمالي المستحق', fmt(tReq)+' ج.م', tOver?('متأخر: '+tOver+' شيك'):'','border-amber-400')+
     card(diff>=0?'الفائض':'العجز', fmt(Math.abs(diff))+' ج.م','', diff>=0?'border-emerald-400':'border-red-400')+
-    card('عدد البنوك', names.length,'','border-slate-400');
+    card('عدد الحسابات', allAccounts().length, names.length+' بنك','border-slate-400');
 }
 function addBankPrompt(){
   const n=prompt('اسم البنك الجديد:');
@@ -2610,18 +2677,36 @@ function setBankTab(tab){
     render();
   }
 }
+let currentCur='';   // '' = كل عملات البنك
+function openAcct(bank, cur, tab){ currentCur=cur||''; openBank(bank, tab); }
+
 function openBank(name, tab){
   currentBank=name||'';
+  if(!name) currentCur='';
+  else {
+    const codes=bankCurs(banks[name]);
+    if(currentCur && !codes.includes(currentCur)) currentCur = codes[0]||'';
+    if(!currentCur) currentCur = codes[0]||BASE_CUR;
+  }
   const b=name?banks[name]:null;
   const lt=document.getElementById('ledgerTitle');
   lt.innerHTML = (b&&b.logo? '<img src="'+b.logo+'" class="w-7 h-7 object-contain rounded inline-block align-middle ml-1">':'')+
-    '<span class="align-middle">'+(name?name:'كل البنوك')+'</span>';
+    '<span class="align-middle">'+(name?name:'كل البنوك')+'</span>'+
+    (name&&currentCur? '<span class="align-middle text-xs font-bold px-2 py-0.5 rounded-lg mr-1" style="background:'+curBy(currentCur).color+'14;color:'+curBy(currentCur).color+';">'+curBy(currentCur).nameAr+'</span>' : '');
   document.getElementById('banksView').classList.add('hidden');
   document.getElementById('bankView').classList.remove('hidden');
   document.getElementById('homeBtn').classList.remove('hidden');
   const sw=document.getElementById('bankSwitch');
   sw.innerHTML='<option value="">— كل البنوك —</option>'+bankNamesSorted().map(b=>'<option value="'+b+'">'+b+'</option>').join('');
   sw.value=currentBank||'';
+  // قائمة تبديل الحساب (العملة) جوّه نفس البنك
+  const cw=document.getElementById('curSwitch');
+  if(cw){
+    const codes = name? bankCurs(banks[name]) : [];
+    cw.innerHTML = codes.map(c=>'<option value="'+c+'">'+curBy(c).nameAr+'</option>').join('');
+    cw.value = currentCur||'';
+    cw.classList.toggle('hidden', codes.length<2);
+  }
   // تحميل رصيد البنك
   document.getElementById('balanceTime').textContent = b? (b.time||'—') : '—';
   renderCurBoxes();
@@ -2686,7 +2771,7 @@ function applyBankCurrencyUI(b){
 }
 
 // --- عملات البنك داخل نموذج البنك ---
-let bfCur=[], bfBal={};
+let bfCur=[], bfBal={}, bfOpen={};
 function renderBfCur(){
   const chips=document.getElementById('bfCurChips');
   if(chips) chips.innerHTML=currencies.map(c=>
@@ -2697,11 +2782,18 @@ function renderBfCur(){
   const list=document.getElementById('bfCurList');
   if(!list) return;
   if(!bfCur.length){ list.innerHTML='<div class="col-span-2 text-xs text-slate-400">اختَر عملة واحدة على الأقل من فوق</div>'; return; }
+  list.className="grid grid-cols-1 md:grid-cols-2 gap-2";
   list.innerHTML=bfCur.map(code=>{
     const c=curBy(code);
     const v=String(bfBal[code]||'').replace(/"/g,'&quot;');
-    return '<div><label class="block text-xs font-bold text-slate-600 mb-1">رصيد '+c.nameAr+' ('+c.symbol+')</label>'+
-      '<input value="'+v+'" oninput="bfBal[\''+code+'\']=this.value" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"></div>';
+    const o=String(bfOpen[code]||'').replace(/"/g,'&quot;');
+    return '<div class="rounded-lg border border-slate-200 p-2" style="background:'+c.color+'0d;">'+
+      '<div class="text-xs font-extrabold mb-1.5" style="color:'+c.color+';">حساب '+c.nameAr+' ('+c.symbol+')</div>'+
+      '<label class="block text-[11px] font-bold text-slate-500 mb-1">الرصيد الحالي</label>'+
+      '<input value="'+v+'" oninput="bfBal[\''+code+'\']=this.value" class="num w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm mb-1.5">'+
+      '<label class="block text-[11px] font-bold text-slate-500 mb-1">الرصيد الافتتاحي <span class="font-normal text-slate-400">(بداية كشف الحساب)</span></label>'+
+      '<input value="'+o+'" oninput="bfOpen[\''+code+'\']=this.value" class="num w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">'+
+      '</div>';
   }).join('');
 }
 function toggleBfCur(code,on){
@@ -2744,6 +2836,7 @@ function openBankForm(name){
   document.getElementById('bfSigners').value = b? (b.signers||[]).join('\n') : '';
   bfCur = b ? bankCurs(b).slice() : [BASE_CUR];
   bfBal = b ? Object.assign({}, b.bal||{}) : {};
+  bfOpen = b ? Object.assign({}, b.openings||(b.opening? {[BASE_CUR]:b.opening} : {})) : {};
   renderBfCur();
   bfLogo = b? (b.logo||'') : '';
   document.getElementById('bfLogoPrev').style.backgroundImage = bfLogo? ('url('+bfLogo+')') : 'none';
@@ -2777,6 +2870,7 @@ function saveBankForm(){
   const aliases=document.getElementById('bfAliases').value.split(/[،,]/).map(x=>x.trim()).filter(Boolean);
   const signers=document.getElementById('bfSigners').value.split('\n').map(x=>x.trim()).filter(Boolean);
   const balObj={}; bfCur.forEach(c=>{ balObj[c]=String(bfBal[c]||'').trim(); });
+  const openObj={}; bfCur.forEach(c=>{ const v=String(bfOpen[c]||'').trim(); if(v) openObj[c]=v; });
 
   if(editingBank){
     const old=editingBank;
@@ -2784,8 +2878,8 @@ function saveBankForm(){
     const renamed = (nm!==old);
     const changedBal = JSON.stringify(b.bal||{})!==JSON.stringify(balObj);
     b.name=nm; b.aliases=aliases; b.logo=bfLogo; b.signers=signers;
-    b.cur=bfCur.slice(); b.bal=balObj;
-    b.opening=balObj[BASE_CUR]||'';
+    b.cur=bfCur.slice(); b.bal=balObj; b.openings=openObj;
+    b.opening=openObj[BASE_CUR]||'';
     if(changedBal) b.time=fmtNow();
     if(renamed){
       delete banks[old]; banks[nm]=b;
@@ -2797,7 +2891,7 @@ function saveBankForm(){
     }
   } else {
     banks[nm]={name:nm, aliases:aliases, logo:bfLogo, signers:signers, cur:bfCur.slice(), bal:balObj,
-      opening:balObj[BASE_CUR]||'', time:Object.values(balObj).some(v=>v)?fmtNow():''};
+      openings:openObj, opening:openObj[BASE_CUR]||'', time:Object.values(balObj).some(v=>v)?fmtNow():''};
   }
   saveBanks(); closeBankForm(); renderCurBoxes(); renderBanks(); render();
   if(!document.getElementById('banksAdminModal').classList.contains('hidden')) renderBanksAdmin();
@@ -2964,6 +3058,16 @@ function addTxnTypePrompt(){
   cfg.txnTypes=txnTypes().concat([nm]); saveCfg();
   fillTxnTypeSelect(nm);
 }
+function fillTxnCurSelect(selected){
+  const sel=document.getElementById('tfCurrency'); if(!sel) return;
+  const bank=(document.getElementById('tfBank')||{}).value||'';
+  const cur = (selected!==undefined) ? String(selected||'') : (sel.value||'');
+  let codes=bankCurs(banks[bank]);
+  if(!codes.length) codes=[BASE_CUR];
+  if(cur && !codes.includes(cur)) codes=codes.concat([cur]);
+  sel.innerHTML=codes.map(c=>'<option value="'+c+'">'+curBy(c).nameAr+' ('+curBy(c).symbol+')</option>').join('');
+  sel.value = (cur && codes.includes(cur)) ? cur : (codes.includes(BASE_CUR)? BASE_CUR : codes[0]);
+}
 function fillTxnTypeSelect(val){
   const ms=document.getElementById('tfMethod'); if(!ms) return;
   const cur = val || ms.value;
@@ -2976,17 +3080,14 @@ function fillTxnTypeSelect(val){
 function loadTxns(){ try{ const a=JSON.parse(localStorage.getItem(TXN_KEY)); if(Array.isArray(a)) txns=a; }catch(e){} }
 function saveTxns(){ try{ localStorage.setItem(TXN_KEY, JSON.stringify(txns)); }catch(e){} scheduleSync('txns'); return true; }
 
-function txnsOf(bank){ return txns.filter(t=>bankKey(t.bank)===bankKey(bank)); }
+function txnsOf(bank){ return txns.filter(t=>bankKey(t.bank)===bankKey(bank) && (!currentCur || curOf(t)===currentCur)); }
 function signed(t){ return (t.dir==='in'?1:-1)*(Number(t.amount)||0); }
 
 // الرصيد الافتتاحي محفوظ على البنك
-function openingOf(bank){
-  const b=banks[bank]; if(!b) return 0;
-  return parseFloat(String(b.opening||bankBal(b,BASE_CUR)||'').replace(/,/g,''))||0;
-}
+function openingOf(bank){ return openingOfAcct(bank, currentCur||BASE_CUR); }
 function balancesOf(bank){
-  const list=txnsOf(bank);
-  const open=openingOf(bank);
+  const list=txnsOfAcct(bank, currentCur||BASE_CUR);
+  const open=openingOfAcct(bank, currentCur||BASE_CUR);
   const conf=list.filter(t=>t.status==='confirmed').reduce((s,t)=>s+signed(t),0);
   const temp=list.filter(t=>t.status!=='confirmed').reduce((s,t)=>s+signed(t),0);
   return {opening:open, confirmed:open+conf, expected:open+conf+temp,
@@ -3007,7 +3108,7 @@ function syncCheckTxns(){
       if(t){ txns=txns.filter(x=>x.id!==t.id); changed=true; }
       return;
     }
-    const wanted={
+    const wanted={ currency: curOf(c),
       bank:c.bank||'', date:(c.status==='اتصرف'&&c.cashedDate)?c.cashedDate:(c.dueDate||''),
       dir:'out', amount:Number(c.amount)||0,
       desc:'شيك رقم '+(c.checkNumber||'—')+' — '+(c.beneficiaryName||''),
@@ -3129,6 +3230,7 @@ function openTxnForm(id){
   bs.innerHTML=names.map(n=>'<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>').join('');
   bs.value = t ? (t.bank||names[0]) : (currentBank || names[0]);
   if(!bs.value) bs.value=names[0];
+  fillTxnCurSelect(t ? (t.currency||BASE_CUR) : (currentCur||BASE_CUR));
   document.getElementById('tfDate').value=t?t.date:todayStr();
   document.getElementById('tfDir').value=t?t.dir:'out';
   document.getElementById('tfAmount').value=t?t.amount:'';
@@ -3153,7 +3255,8 @@ function saveTxnForm(){
     amount:amount, desc:desc||'حركة', method:document.getElementById('tfMethod').value,
     status:document.getElementById('tfStatus').value,
     ref:document.getElementById('tfRef').value.trim(),
-    notes:document.getElementById('tfNotes').value.trim()
+    notes:document.getElementById('tfNotes').value.trim(),
+    currency:(document.getElementById('tfCurrency').value||BASE_CUR)
   };
   if(editingTxn){ const t=txns.find(x=>x.id===editingTxn); Object.assign(t,obj); }
   else txns.push(Object.assign({id:uid()},obj));
@@ -3208,7 +3311,7 @@ const MAP = {
     toRow: c => ({
       id: c.id, check_number: nn(c.checkNumber), bank: String(c.bank||'').trim() || '—',
       beneficiary_name: nn(c.beneficiaryName), purpose: nn(c.purpose), unit: nn(c.unit),
-      location: nn(c.location), note: nn(c.note), amount: num(c.amount),
+      location: nn(c.location), note: nn(c.note), amount: num(c.amount), currency: c.currency||BASE_CUR,
       issue_date: dt(c.issueDate), due_date: dt(c.dueDate), cashed_date: dt(c.cashedDate),
       status: String(c.status||'مستحق')
     }),
@@ -3217,6 +3320,7 @@ const MAP = {
       beneficiaryName: r.beneficiary_name||'', purpose: r.purpose||'', unit: r.unit||'',
       location: r.location||'', note: r.note||'', amount: Number(r.amount)||0,
       issueDate: r.issue_date||'', dueDate: r.due_date||'', cashedDate: r.cashed_date||'',
+      currency: r.currency||BASE_CUR,
       status: r.status||'مستحق'
     })
   },
@@ -3228,13 +3332,13 @@ const MAP = {
       id: t.id, bank: String(t.bank||'').trim() || '—', txn_date: dt(t.date),
       dir: (t.dir==='in'?'in':'out'), amount: num(t.amount), descr: nn(t.desc),
       method: nn(t.method), ref: nn(t.ref), notes: nn(t.notes),
-      status: (t.status==='confirmed'?'confirmed':'temp'),
+      status: (t.status==='confirmed'?'confirmed':'temp'), currency: t.currency||BASE_CUR,
       src_check_id: (t.srcCheckId && isUuid(t.srcCheckId)) ? t.srcCheckId : null
     }),
     fromRow: r => ({
       id: r.id, bank: r.bank||'', date: r.txn_date||'', dir: r.dir||'out',
       amount: Number(r.amount)||0, desc: r.descr||'', method: r.method||'',
-      ref: r.ref||'', notes: r.notes||'', status: r.status||'temp',
+      ref: r.ref||'', notes: r.notes||'', status: r.status||'temp', currency: r.currency||BASE_CUR,
       srcCheckId: r.src_check_id||undefined
     })
   },
@@ -3259,11 +3363,11 @@ const MAP = {
     toRow: b => ({
       id: b._id, name: b.name, aliases: b.aliases||[], signers: b.signers||[],
       cur: (b.cur&&b.cur.length)? b.cur : ['EGP'], bal: b.bal||{},
-      opening: nn(b.opening), logo: nn(b.logo), bal_time: nn(b.time)
+      openings: b.openings||{}, opening: nn(b.opening), logo: nn(b.logo), bal_time: nn(b.time)
     }),
     fromRow: r => ({
       _id: r.id, name: r.name, aliases: r.aliases||[], signers: r.signers||[],
-      cur: r.cur||['EGP'], bal: r.bal||{}, opening: r.opening||'',
+      cur: r.cur||['EGP'], bal: r.bal||{}, openings: r.openings||{}, opening: r.opening||'',
       logo: r.logo||'', time: r.bal_time||''
     })
   }
@@ -3540,64 +3644,6 @@ async function doLogout(){
 }
 
 // ---------------------------------------------------------------------
-//  تغيير كلمة السر
-// ---------------------------------------------------------------------
-let RECOVERY_MODE = false;   // اتفتحت من لينك استعادة الباسورد
-
-function pwdMsg(txt, kind){
-  const e=document.getElementById('pwdMsg');
-  if(!e) return;
-  e.textContent = txt || '';
-  e.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 ' +
-    (kind==='ok' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                 : 'bg-red-50 border border-red-200 text-red-700');
-  e.classList.toggle('hidden', !txt);
-}
-
-function openPwdModal(recovery){
-  RECOVERY_MODE = !!recovery;
-  const m=document.getElementById('pwdModal');
-  m.classList.remove('hidden'); m.classList.add('flex');
-  document.getElementById('pwd1').value='';
-  document.getElementById('pwd2').value='';
-  pwdMsg('');
-  document.getElementById('pwdTitle').textContent = RECOVERY_MODE ? 'تعيين كلمة سر جديدة' : 'تغيير كلمة السر';
-  document.getElementById('pwdHint').textContent  = RECOVERY_MODE
-      ? 'وصلت من لينك الاستعادة. اكتب كلمة السر الجديدة (٦ حروف على الأقل).'
-      : 'اكتب كلمة سر جديدة (٦ حروف على الأقل).';
-  document.getElementById('pwdClose').classList.toggle('hidden', RECOVERY_MODE);
-  setTimeout(()=>document.getElementById('pwd1').focus(), 50);
-}
-
-function closePwdModal(){
-  if(RECOVERY_MODE) return;   // لازم يكمّل التعيين
-  const m=document.getElementById('pwdModal');
-  m.classList.add('hidden'); m.classList.remove('flex');
-}
-
-async function savePassword(){
-  const p1=document.getElementById('pwd1').value;
-  const p2=document.getElementById('pwd2').value;
-  if(p1.length < 6){ pwdMsg('كلمة السر لازم تكون ٦ حروف على الأقل'); return; }
-  if(p1 !== p2){ pwdMsg('التأكيد مش مطابق'); return; }
-  const btn=document.getElementById('pwdBtn');
-  btn.disabled=true; pwdMsg('');
-  const { error } = await sb.auth.updateUser({ password: p1 });
-  btn.disabled=false;
-  if(error){
-    pwdMsg(/should be different|same as/i.test(error.message)
-           ? 'كلمة السر الجديدة زي القديمة — غيّرها'
-           : error.message);
-    return;
-  }
-  pwdMsg('✅ اتغيّرت. هتخرج دلوقتي عشان تدخل بيها.', 'ok');
-  setTimeout(async ()=>{
-    try{ await sb.auth.signOut(); }catch(e){}
-    location.replace(location.pathname + location.search);
-  }, 1400);
-}
-
-// ---------------------------------------------------------------------
 //  الترحيل لمرة واحدة: رفع البيانات المحلية للسحابة
 // ---------------------------------------------------------------------
 // نسخة مجمّدة من بيانات المتصفح تتاخد مرة واحدة قبل أي كتابة سحابية،
@@ -3679,7 +3725,7 @@ async function offerMigration(counts){
     const bankRows = Object.values(L.banks).map(b=>({
       id: uid(), name: b.name, aliases: b.aliases||[], signers: b.signers||[],
       cur: (b.cur&&b.cur.length)? b.cur : ['EGP'], bal: b.bal||{},
-      opening: nn(b.opening), logo: nn(b.logo), bal_time: nn(b.time)
+      openings: b.openings||{}, opening: nn(b.opening), logo: nn(b.logo), bal_time: nn(b.time)
     }));
     if(bankRows.length){
       const {error}=await sb.from('ct_banks').insert(bankRows); if(error) throw error;
@@ -3825,7 +3871,6 @@ async function boot(){
   ensurePreBackup();                       // قبل أي كتابة على التخزين المحلي
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ showLogin(); return; }
-  if(RECOVERY_MODE) return;                // لينك استعادة: استنى تعيين الباسورد الأول
   ME = session.user;
 
   // الدور
@@ -3894,21 +3939,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     return;
   }
   sb = window.supabase.createClient(SB_URL, SB_KEY);
-
-  // لينك استعادة الباسورد: افتح شاشة تعيين كلمة سر جديدة بدل الدخول العادي
-  const _hash = location.hash || '';
-  if(/type=recovery/.test(_hash)) RECOVERY_MODE = true;
-  sb.auth.onAuthStateChange((event)=>{
-    if(event === 'PASSWORD_RECOVERY'){
-      RECOVERY_MODE = true;
-      if(document.getElementById('pwdModal').classList.contains('hidden')) openPwdModal(true);
-    }
-  });
-
   document.getElementById('lgPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
-  document.getElementById('pwd2').addEventListener('keydown', e=>{ if(e.key==='Enter') savePassword(); });
   await boot();
-  if(RECOVERY_MODE && document.getElementById('pwdModal').classList.contains('hidden')) openPwdModal(true);
 });
 
 </script>
@@ -4430,7 +4462,11 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       </div>
       <div class="col-span-2">
         <label class="block text-xs font-bold text-slate-600 mb-1">البنك *</label>
-        <select id="tfBank" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"></select>
+        <select id="tfBank" onchange="fillTxnCurSelect()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"></select>
+      </div>
+      <div class="col-span-2">
+        <label class="block text-xs font-bold text-slate-600 mb-1">عملة الحساب *</label>
+        <select id="tfCurrency" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"></select>
       </div>
       <div>
         <label class="block text-xs font-bold text-slate-600 mb-1">الاتجاه *</label>
