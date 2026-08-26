@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1e293b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Banks">
+<title>Banks — OSOOL Residence</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+// لو الـCDN الأساسي مقفول، نجرّب مصادر تانية قبل ما نستسلم
+window.__sbSources = [
+  'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
+  'https://cdn.skypack.dev/@supabase/supabase-js@2/dist/umd/supabase.js',
+  'https://esm.sh/@supabase/supabase-js@2/dist/umd/supabase.js'
+];
+window.loadSupabase = function(){
+  return new Promise(resolve=>{
+    if(window.supabase && window.supabase.createClient) return resolve(true);
+    const list = window.__sbSources.slice();
+    (function next(){
+      if(!list.length) return resolve(false);
+      const sc=document.createElement('script');
+      sc.src=list.shift();
+      sc.onload =()=> (window.supabase && window.supabase.createClient) ? resolve(true) : next();
+      sc.onerror=()=> next();
+      document.head.appendChild(sc);
+    })();
+  });
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+  *{font-family:'Cairo',sans-serif;}
+  body{background:#f1f5f9;}
+  .num{direction:ltr;text-align:right;}
+  ::-webkit-scrollbar{height:8px;width:8px;}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;}
+  #chequePrint{display:none;}
+  @media print{
+    body.cheque-mode .max-w-7xl,
+    body.cheque-mode #printHead,
+    body.cheque-mode #printSummary{ display:none!important; }
+    body.cheque-mode #chequePrint{ display:block!important; }
+    body.cheque-mode .cheque-page:last-child{ page-break-after:auto; }
+  }
+  body.no-delete .needs-delete{display:none!important;}
+  body.no-write  .needs-write{display:none!important;}
+  body.no-admin  .needs-admin{display:none!important;}
+  body.no-approve .needs-approve{display:none!important;}
+  .overflow-x-auto{ -webkit-overflow-scrolling:touch; }
+  @media (max-width:768px){
+    .overflow-x-auto{
+      background:
+        linear-gradient(to left, rgba(255,255,255,0), rgba(255,255,255,1) 70%) left center,
+        linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,1) 70%) right center,
+        linear-gradient(to left, rgba(0,0,0,.10), rgba(0,0,0,0)) left center,
+        linear-gradient(to right, rgba(0,0,0,.10), rgba(0,0,0,0)) right center;
+      background-repeat:no-repeat;
+      background-size:26px 100%, 26px 100%, 12px 100%, 12px 100%;
+      background-attachment:local, local, scroll, scroll;
+    }
+    /* أزرار وحقول أكبر لللمس */
+    button, .btn, select, input[type=file]+*{ touch-action:manipulation; }
+  }
+  #printHead{display:none;}
+  #printSummary{display:none;}
+  #txnPrintHead{display:none;}
+  @media print{
+    *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+    @page{ size:A4 landscape; margin:15mm; }
+    html,body{ font-size:11.5px; }
+    .no-print{display:none!important;}
+    body{background:#fff;}
+    .max-w-7xl{ max-width:100%!important; padding:0!important; }
+    #printHead{ display:block!important; margin-bottom:10px; }
+    #summary{ display:none!important; }
+    .print-area{ box-shadow:none!important; border:1px solid #e2e8f0; overflow:visible!important; }
+    .print-area .overflow-x-auto{ overflow:visible!important; }
+    table{ width:auto!important; border-collapse:collapse; margin:0 auto!important; }
+    thead{ display:table-header-group; }
+    tr{ page-break-inside:avoid; }
+    th,td{ padding:6px 13px!important; font-size:13px!important; }
+    th{ white-space:nowrap; }
+    td{ white-space:nowrap; }
+    #printSummary{ display:block!important; page-break-inside:avoid; margin-top:14px; }
+    #txnPrintHead{ display:block!important; margin-bottom:10px; }
+  }
+</style>
+</head>
+<body class="text-slate-800">
+
+<!-- ======== بوابة الدخول ======== -->
+<div id="loginGate" class="fixed inset-0 z-[100] bg-slate-100 flex items-center justify-center p-4 no-print">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+    <div class="text-center mb-5">
+      <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks</h1>
+      <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
+    </div>
+    <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
+    <label class="block text-xs font-bold text-slate-600 mb-1">الإيميل</label>
+    <input id="lgEmail" type="email" autocomplete="username" dir="ltr" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-slate-400">
+    <label class="block text-xs font-bold text-slate-600 mb-1">كلمة السر</label>
+    <input id="lgPass" type="password" autocomplete="current-password" dir="ltr" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-4 outline-none focus:ring-2 focus:ring-slate-400">
+    <button id="lgBtn" onclick="doLogin()" class="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-bold">دخول</button>
+    <p class="text-[11px] text-slate-400 text-center mt-4">الحسابات بيضيفها الأدمن. لو مش عارف تدخل، كلّمه.</p>
+    <div id="diagBox" class="mt-3 pt-3 border-t border-slate-100 text-[10px] text-slate-400 leading-relaxed" dir="ltr"></div>
+  </div>
+</div>
+
+<div id="appRoot" class="hidden max-w-7xl mx-auto p-4 md:p-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-4 md:mb-5 flex-wrap gap-2 md:gap-3">
+    <div class="flex items-center gap-2 md:gap-3 cursor-pointer min-w-0" onclick="backToBanks()" title="الرجوع لشاشة البنوك">
+      <div id="appLogoEl" class="w-9 h-9 md:w-12 md:h-12 shrink-0 rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-lg shadow">OS</div>
+      <div>
+        <h1 id="appTitleEl" class="text-base md:text-2xl font-extrabold text-slate-800 leading-tight">Banks</h1>
+        <p id="appSubtitleEl" class="hidden md:block text-sm text-slate-500">OSOOL Residence — أداة متابعة الشيكات</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5 md:gap-2 no-print flex-wrap justify-end">
+      <span id="cloudState" class="text-[11px] font-bold px-2 py-1 rounded-lg border bg-slate-50 text-slate-600 border-slate-200">⏳ بيحمّل...</span>
+      <span id="roleBadge" class="hidden md:inline text-[11px] font-bold px-2 py-1 rounded-lg border bg-slate-100 text-slate-600 border-slate-200">—</span>
+
+      <button id="homeBtn" onclick="backToBanks()" class="hidden bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg text-sm font-bold">🏦 البنوك</button>
+
+      <button onclick="openTxnForm()" class="needs-write bg-teal-600 hover:bg-teal-700 text-white px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        حركة
+      </button>
+      <button onclick="openForm()" class="needs-write bg-slate-800 hover:bg-slate-900 text-white px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        شيك
+      </button>
+
+      <button onclick="openApprove()" title="مصادقة العمليات المعلّقة" class="needs-approve relative bg-emerald-600 hover:bg-emerald-700 text-white px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow">
+        ✅ مصادقة
+        <span id="pendCount" class="hidden absolute -top-1.5 -left-1.5 bg-red-500 text-white text-[10px] rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center font-extrabold"></span>
+      </button>
+
+      <div class="relative">
+        <button onclick="toggleMoreMenu(event)" title="المزيد" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 md:py-2.5 rounded-lg text-base font-bold leading-none">⋯</button>
+        <div id="moreMenu" class="hidden absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50 min-w-[210px] text-right">
+          <div class="px-4 py-2 border-b border-slate-100">
+            <div id="whoAmI" class="text-xs font-bold text-slate-700 truncate"></div>
+            <div id="roleBadgeMobile" class="text-[11px] text-slate-400 mt-0.5"></div>
+          </div>
+          <button onclick="closeMoreMenu();openUsers()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">👥 المستخدمين والصلاحيات</button>
+          <button onclick="closeMoreMenu();openSettings()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">⚙ الإعدادات</button>
+          <button onclick="closeMoreMenu();exportBackup()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-purple-700 hover:bg-purple-50">💾 نسخة كاملة</button>
+          <label class="needs-admin block w-full text-right px-4 py-2.5 text-sm font-bold text-purple-700 hover:bg-purple-50 cursor-pointer">
+            ↩ استرجاع نسخة
+            <input type="file" accept=".json" class="hidden" onchange="closeMoreMenu();importBackup(event)">
+          </label>
+          <button onclick="closeMoreMenu();repairUpload()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-amber-700 hover:bg-amber-50">🔧 رفع الناقص</button>
+          <div class="border-t border-slate-100 mt-1 pt-1">
+            <button onclick="closeMoreMenu();doLogout()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50">↪ تسجيل الخروج</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BANKS VIEW ===== -->
+  <div id="roleNotice" class="hidden bg-sky-50 border border-sky-200 text-sky-800 rounded-xl px-3 py-2 mb-3 text-xs font-bold no-print"></div>
+
+  <div id="banksView" class="no-print">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <h2 class="text-lg font-extrabold text-slate-800">البنوك</h2>
+      <div class="flex items-center gap-2 no-print">
+        <button onclick="openBanksAdmin()" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold">⚙ إدارة البنوك</button>
+        <button onclick="openBankForm()" class="needs-admin bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold">+ بنك جديد</button>
+      </div>
+    </div>
+    <div id="banksTotals" class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 mb-3 md:mb-4"></div>
+    <div id="banksGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4"></div>
+    <div class="mt-4">
+      <button onclick="openBank('')" class="w-full bg-white border-2 border-dashed border-slate-300 hover:bg-slate-50 text-slate-600 rounded-xl py-3 text-sm font-bold">عرض كل الشيكات (كل البنوك)</button>
+    </div>
+  </div>
+
+  <!-- ===== BANK VIEW (شاشة البنك: تبويب الشيكات + تبويب الحركات) ===== -->
+  <div id="bankView" class="hidden">
+    <div class="sticky top-0 z-30 bg-slate-100/95 backdrop-blur -mx-4 md:-mx-6 px-4 md:px-6 pt-2 mb-3 no-print border-b border-slate-200">
+      <div class="flex items-center gap-2 flex-wrap mb-2">
+        <button onclick="backToBanks()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-bold">‹ كل البنوك</button>
+        <span id="ledgerTitle" class="text-base font-extrabold text-slate-800"></span>
+        <select id="bankSwitch" onchange="currentCur=''; openBank(this.value, currentTab)" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white mr-auto"></select>
+        <select id="curSwitch" onchange="openAcct(currentBank, this.value, currentTab)" class="hidden border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white font-bold"></select>
+        <button onclick="openBankForm(currentBank||null)" class="needs-admin bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold">إدارة البنك</button>
+      </div>
+      <div class="flex items-end gap-1">
+        <button id="tabBtn_checks" onclick="setBankTab('checks')" class="px-4 py-2 rounded-t-lg text-sm font-bold">📄 الشيكات</button>
+        <button id="tabBtn_txns"   onclick="setBankTab('txns')"   class="px-4 py-2 rounded-t-lg text-sm font-bold">📒 حركات الحساب</button>
+      </div>
+    </div>
+
+  <!-- Bank balance (top, manual entry) -->
+  <div class="bg-white rounded-xl shadow-sm p-4 mb-4 no-print">
+    <div class="text-sm font-extrabold text-slate-700 mb-3">رصيد البنك الآن</div>
+    <div id="curGrid" class="grid gap-4"></div>
+
+    <div id="rateRow" class="flex items-center justify-center gap-2 flex-wrap mt-3">
+      <span id="rateSummary" class="text-[11px] text-slate-500"></span>
+      <button type="button" onclick="openCurAdmin()" class="needs-admin bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold whitespace-nowrap">💱 العملات والأسعار</button>
+      <button type="button" onclick="fetchRate(true)" title="تحديث الأسعار من النت" class="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold whitespace-nowrap">↻ تحديث</button>
+      <span id="rateInfo" class="text-[11px] text-slate-400">—</span>
+    </div>
+
+    <div id="arrowsRow" class="flex justify-around px-12 text-slate-500 text-4xl leading-none mt-2 font-bold">
+      <span>↙</span><span>↘</span>
+    </div>
+    <div id="availBox" class="mx-auto max-w-md rounded-xl border-2 border-slate-800 bg-slate-50 px-4 py-3 text-center mt-1">
+      <div class="text-xs font-bold text-slate-500 mb-0.5">إجمالي المتاح بالجنيه</div>
+      <div id="availTotal" class="text-2xl font-extrabold text-slate-800 text-center" style="direction:ltr;">—</div>
+    </div>
+    <div class="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 flex-wrap gap-2">
+      <div class="text-xs text-slate-500">توقيت إدخال الرصيد: <span id="balanceTime" class="font-extrabold text-slate-800 num">—</span></div>
+      <span id="coverHint" class="text-sm font-bold"></span>
+    </div>
+  </div>
+
+  <div id="checksPane">
+
+  <!-- Print header (print only) -->
+  <div id="printHead"></div>
+
+  <!-- Summary cards -->
+  <div id="summary" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5"></div>
+
+  <!-- Toolbar -->
+  <div class="bg-white rounded-xl shadow-sm p-3 mb-4 no-print">
+    <div class="flex flex-wrap items-center gap-2">
+
+      <div class="relative">
+        <button onclick="toggleMenu(event,'mExpChk')" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5">⬇ تصدير Excel <span class="text-[10px]">▾</span></button>
+        <div id="mExpChk" class="hidden absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-40 min-w-[190px]">
+          <button onclick="closeMenus();downloadTemplate()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">نموذج Excel فارغ</button>
+          <button onclick="closeMenus();exportExcel()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">تصدير Excel</button>
+        </div>
+      </div>
+
+      <label class="needs-write bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold cursor-pointer flex items-center gap-1.5">
+        ⬆ استيراد Excel
+        <input type="file" accept=".xlsx,.xls" class="hidden" onchange="importExcel(event)">
+      </label>
+
+      <div class="relative">
+        <button onclick="toggleMenu(event,'mChqChk')" class="needs-write bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5">🧾 إنشاء شيكات <span class="text-[10px]">▾</span></button>
+        <div id="mChqChk" class="hidden absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-40 min-w-[190px]">
+          <button onclick="closeMenus();openTplEditor()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">قوالب الشيكات</button>
+          <button onclick="closeMenus();openPrep()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">تجهيز الشيكات</button>
+          <button onclick="closeMenus();openChequePrint()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">طباعة الشيكات</button>
+        </div>
+      </div>
+
+      <button onclick="printReport()" class="mr-auto bg-slate-600 hover:bg-slate-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+        طباعة / PDF
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-white rounded-xl shadow-sm p-3 mb-4 no-print">
+    <div class="grid grid-cols-2 md:grid-cols-8 gap-2.5">
+      <div class="col-span-2 md:col-span-1">
+        <label class="block text-xs text-slate-500 mb-1">بحث</label>
+        <input id="fSearch" oninput="render()" placeholder="اسم / رقم شيك / وحدة" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-400 outline-none">
+      </div>
+      <div class="relative">
+        <label class="block text-xs text-slate-500 mb-1">الحالة</label>
+        <button type="button" id="btnStatus" onclick="toggleDD(event,'ddStatus')" class="w-full text-right border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none flex items-center justify-between gap-1">
+          <span id="lblStatus" class="truncate">الكل</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 text-slate-400"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="ddStatus" onclick="event.stopPropagation()" class="hidden absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg p-1 max-h-56 overflow-auto"></div>
+      </div>
+      <div class="relative">
+        <label class="block text-xs text-slate-500 mb-1" data-lbl="purpose">الغرض</label>
+        <button type="button" id="btnPurpose" onclick="toggleDD(event,'ddPurpose')" class="w-full text-right border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none flex items-center justify-between gap-1">
+          <span id="lblPurpose" class="truncate">الكل</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 text-slate-400"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="ddPurpose" onclick="event.stopPropagation()" class="hidden absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg p-1 max-h-56 overflow-auto"></div>
+      </div>
+      <div class="relative">
+        <label class="block text-xs text-slate-500 mb-1">البنك</label>
+        <button type="button" id="btnBank" onclick="toggleDD(event,'ddBank')" class="w-full text-right border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none flex items-center justify-between gap-1">
+          <span id="lblBank" class="truncate">الكل</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 text-slate-400"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="ddBank" onclick="event.stopPropagation()" class="hidden absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg p-1 max-h-56 overflow-auto"></div>
+      </div>
+      <div class="relative">
+        <label class="block text-xs text-slate-500 mb-1" data-lbl="signer">توقيع</label>
+        <button type="button" id="btnLoc" onclick="toggleDD(event,'ddLoc')" class="w-full text-right border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none flex items-center justify-between gap-1">
+          <span id="lblLoc" class="truncate">الكل</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0 text-slate-400"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="ddLoc" onclick="event.stopPropagation()" class="hidden absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg p-1 max-h-56 overflow-auto"></div>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">من تاريخ (استحقاق)</label>
+        <input id="fFrom" type="date" onchange="render()" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none num">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">إلى تاريخ (استحقاق)</label>
+        <input id="fTo" type="date" onchange="render()" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none num">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">ترتيب حسب</label>
+        <select id="fSort" onchange="render()" class="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white outline-none">
+          <option value="due_asc">تاريخ الصرف — الأقدم أولاً</option>
+          <option value="due_desc">تاريخ الصرف — الأحدث أولاً</option>
+          <option value="cashed_first">المصروف أولاً ثم غير المصروف</option>
+          <option value="uncashed_first">غير المصروف أولاً ثم المصروف</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt-3 pt-3 border-t border-slate-100">
+      <div class="text-xs text-slate-500 mb-1.5">اختصار «إلى تاريخ» (حسب استحقاقات الشيكات القادمة):</div>
+      <div id="dateChips" class="flex flex-wrap gap-1.5"></div>
+    </div>
+  </div>
+
+  <!-- Bulk actions -->
+  <div id="bulkBar" class="hidden needs-write bg-slate-800 text-white rounded-xl shadow p-3 mb-3 no-print">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm font-bold"><span id="bulkCount">0</span> شيك محدد</span>
+      <input id="bulkNote" placeholder="اكتب البيان/الوصف..." class="flex-1 min-w-[180px] bg-white/10 border border-white/25 rounded-lg px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-white/40">
+      <button onclick="applyBulkNote()" class="bg-white text-slate-800 hover:bg-slate-100 px-4 py-2 rounded-lg text-sm font-bold">تطبيق البيان</button>
+      <button onclick="applyBulkNote(true)" class="bg-white/10 border border-white/25 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold">مسح البيان</button>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/15">
+      <input id="bulkSign" list="locationList" placeholder="اكتب اسم التوقيع..." class="flex-1 min-w-[180px] bg-white/10 border border-white/25 rounded-lg px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-white/40">
+      <button onclick="applyBulkSign()" class="bg-white text-slate-800 hover:bg-slate-100 px-4 py-2 rounded-lg text-sm font-bold">تطبيق التوقيع</button>
+      <button onclick="applyBulkSign(true)" class="bg-white/10 border border-white/25 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold">مسح التوقيع</button>
+      <button onclick="clearSelection()" class="bg-white/10 border border-white/25 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-bold mr-auto">إلغاء التحديد</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl shadow-sm overflow-hidden print-area">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-100 text-slate-600 text-xs">
+          <tr>
+            <th class="px-2 py-3 text-center no-print"><input type="checkbox" id="selAll" onchange="toggleSelectAll(this)" class="w-4 h-4 accent-slate-700"></th>
+            <th class="px-3 py-3 text-right font-bold">رقم الشيك</th>
+            <th class="px-3 py-3 text-right font-bold">الاسم</th>
+            <th class="px-3 py-3 text-right font-bold" data-lbl="purpose">الغرض</th>
+            <th class="px-3 py-3 text-right font-bold" data-lbl="unit">الوحدة / الوحدات</th>
+            <th class="px-3 py-3 text-right font-bold">البنك</th>
+            <th class="px-3 py-3 text-right font-bold" data-lbl="signer">توقيع</th>
+            <th class="px-3 py-3 text-right font-bold">البيان</th>
+            <th class="px-3 py-3 text-right font-bold">المبلغ</th>
+            <th class="px-3 py-3 text-right font-bold">استحقاق الصرف</th>
+            <th class="px-3 py-3 text-right font-bold">الصرف الفعلي</th>
+            <th class="px-3 py-3 text-right font-bold">الحالة</th>
+            <th class="px-3 py-3 text-center font-bold no-print">إجراءات</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="empty" class="hidden py-16 text-center text-slate-400">
+      <p class="font-bold mb-1">مفيش شيكات مسجلة</p>
+      <p class="text-sm">اضغط "إضافة شيك" أو ارفع ملف Excel للبدء</p>
+    </div>
+  </div>
+
+  <!-- Print-only summary at the end -->
+  <div id="printSummary"></div>
+
+  </div><!-- /checksPane -->
+
+  <!-- ===== لوح حركات الحساب ===== -->
+  <div id="txnsPane" class="hidden">
+      <div id="txnPrintHead"></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3 no-print">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+          <label class="block text-[11px] font-bold text-slate-500 mb-1">الرصيد الافتتاحي</label>
+          <input id="txnOpening" onchange="saveOpening()" class="num w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+          <div class="text-[11px] font-bold text-emerald-700">الرصيد المؤكد</div>
+          <div id="txnConfirmed" class="text-xl font-extrabold text-emerald-800 num">0</div>
+        </div>
+        <div class="bg-sky-50 border border-sky-200 rounded-xl p-3 text-center">
+          <div class="text-[11px] font-bold text-sky-700">الرصيد المتوقع</div>
+          <div id="txnExpected" class="text-xl font-extrabold text-sky-800 num">0</div>
+        </div>
+      </div>
+      <div id="txnPendingInfo" class="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 no-print"></div>
+
+  <div class="bg-white rounded-xl shadow-sm p-3 mb-4 no-print">
+    <div class="flex flex-wrap items-center gap-2">
+
+      <div class="relative">
+        <button onclick="toggleMenu(event,'mExpTxn')" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5">⬇ تصدير Excel <span class="text-[10px]">▾</span></button>
+        <div id="mExpTxn" class="hidden absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-40 min-w-[190px]">
+          <button onclick="closeMenus();downloadTxnTemplate()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">نموذج Excel فارغ</button>
+          <button onclick="closeMenus();exportTxnsExcel()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">تصدير Excel</button>
+        </div>
+      </div>
+
+      <label class="needs-write bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold cursor-pointer flex items-center gap-1.5">
+        ⬆ استيراد Excel
+        <input type="file" accept=".xlsx,.xls" class="hidden" onchange="importTxnsExcel(event)">
+      </label>
+
+      <div class="relative">
+        <button onclick="toggleMenu(event,'mChqTxn')" class="needs-write bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5">🧾 إنشاء شيكات <span class="text-[10px]">▾</span></button>
+        <div id="mChqTxn" class="hidden absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-40 min-w-[190px]">
+          <button onclick="closeMenus();openTplEditor()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">قوالب الشيكات</button>
+          <button onclick="closeMenus();openPrep()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">تجهيز الشيكات</button>
+          <button onclick="closeMenus();openChequePrint()" class="w-full text-right px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap">طباعة الشيكات</button>
+        </div>
+      </div>
+
+      <button onclick="printTxns()" class="mr-auto bg-slate-600 hover:bg-slate-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+        طباعة / PDF
+      </button>
+
+    </div>
+  </div>
+
+      <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+        <button onclick="openTxnForm()" class="needs-write bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-sm font-bold">+ حركة جديدة</button>
+        <span class="mr-auto flex items-center gap-1.5">
+          <button id="txnTab_all" onclick="setTxnFilter('all')">الكل</button>
+          <button id="txnTab_temp" onclick="setTxnFilter('temp')">بانتظار المطابقة</button>
+          <button id="txnTab_confirmed" onclick="setTxnFilter('confirmed')">مؤكدة</button>
+        </span>
+      </div>
+
+      <div class="border border-slate-200 rounded-lg overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-600 text-xs">
+            <tr>
+              <th class="p-2 text-right font-bold">التاريخ</th>
+              <th class="p-2 text-right font-bold">البيان</th>
+              <th class="p-2 text-right font-bold">نوع العملية</th>
+              <th class="p-2 text-right font-bold">رقم الشيك / العملية</th>
+              <th class="p-2 text-right font-bold">ملاحظات</th>
+              <th class="p-2 text-right font-bold">وارد</th>
+              <th class="p-2 text-right font-bold">منصرف</th>
+              <th class="p-2 text-right font-bold">الرصيد</th>
+              <th class="p-2 text-right font-bold">الحالة</th>
+              <th class="p-2 text-center font-bold">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="txnBody"></tbody>
+        </table>
+        <div id="txnEmpty" class="hidden py-10 text-center text-slate-400 text-sm">مفيش حركات — اضغط «حركة جديدة»</div>
+      </div>
+  </div><!-- /txnsPane -->
+
+  </div><!-- /bankView -->
+
+  <p class="text-center text-xs text-slate-400 mt-4">البيانات محفوظة على السحابة ومشتركة بين الفريق · نزّل «نسخة كاملة» من وقت للتاني للحفظ الاحتياطي</p>
+</div>
+
+<!-- Modal Form -->
+<div id="modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4 no-print" onclick="if(event.target===this)closeForm()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[92vh]">
+    <div class="flex items-center justify-between p-4 border-b border-slate-100 shrink-0 bg-white rounded-t-2xl">
+      <h2 id="modalTitle" class="text-lg font-extrabold">إضافة شيك</h2>
+      <button onclick="closeForm()" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg w-9 h-9 flex items-center justify-center text-2xl leading-none">&times;</button>
+    </div>
+    <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto flex-1">
+      <input type="hidden" id="fld_id">
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">تاريخ كتابة الشيك <span class="text-slate-400 font-normal">(اختياري)</span></label>
+        <input id="fld_issueDate" type="date" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">تاريخ استحقاق الصرف *</label>
+        <input id="fld_dueDate" type="date" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">رقم الشيك *</label>
+        <input id="fld_checkNumber" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">المبلغ *</label>
+        <input id="fld_amount" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">الاسم (المكتوب في الشيك) *</label>
+        <input id="fld_beneficiaryName" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">البنك</label>
+        <select id="fld_bank" onchange="fillSignerSelect(); fillCurSelect()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-slate-400"></select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">عملة الشيك *</label>
+        <select id="fld_currency" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-slate-400"></select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1" data-lbl="purpose">الغرض</label>
+        <input id="fld_purpose" list="purposeList" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400" placeholder="إيجار / تأمين / قرض ...">
+        <datalist id="purposeList">
+          <option value="إيجار"></option>
+          <option value="تأمين"></option>
+          <option value="قرض"></option>
+        </datalist>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1" data-lbl="unit">الوحدة / الوحدات</label>
+        <input id="fld_unit" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400" placeholder="مثال: بورتو A-12، ميفيدا B-3">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1" data-lbl="signer">توقيع</label>
+        <select id="fld_location" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-slate-400"></select>
+        <p id="fld_locHint" class="text-[11px] text-slate-400 mt-1 hidden">مفيش أصحاب توقيع للبنك ده — ضيفهم من «إدارة البنك».</p>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">البيان / الوصف</label>
+        <input id="fld_note" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400" placeholder="وصف اختياري">
+        <datalist id="locationList"></datalist>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">تاريخ الصرف الفعلي <span class="text-slate-400 font-normal">(لما يتصرف)</span></label>
+        <input id="fld_cashedDate" type="date" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">الحالة</label>
+        <select id="fld_status" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none">
+          <option value="مستحق">مستحق</option>
+          <option value="اتصرف">اتصرف</option>
+          <option value="مرتجع">مرتجع</option>
+          <option value="ملغي">ملغي</option>
+        </select>
+      </div>
+    </div>
+    <div class="p-4 border-t border-slate-100 flex gap-2 shrink-0 bg-white rounded-b-2xl">
+      <button onclick="saveCheck()" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex-1">حفظ</button>
+      <button onclick="closeForm()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-bold">إلغاء</button>
+    </div>
+  </div>
+</div><!-- /appRoot -->
+
+<script>
+const KEY = 'osool_checks_v2';
+let DEFAULT_BANK = 'CIB osool';
+let checks = [];
+
+// ---------- storage ----------
+function load(){ try{ checks = JSON.parse(localStorage.getItem(KEY)) || []; }catch(e){ checks = []; } }
+function save(){ try{localStorage.setItem(KEY, JSON.stringify(checks));}catch(e){} scheduleSync('checks'); }
+
+// ---------- helpers ----------
+function uid(){
+  if(typeof crypto!=='undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
+    const r=Math.random()*16|0, v=c==='x'?r:((r&0x3)|0x8); return v.toString(16);
+  });
+}
+function isUuid(v){ return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||'')); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function fmt(n){ const x = Number(n)||0; return x.toLocaleString('en-US',{minimumFractionDigits:0, maximumFractionDigits:2}); }
+
+// توحيد الحروف: تجاهل الهمزة وأشكال الألف
+function normAr(s){
+  return (s||'').toString()
+    .replace(/[إأآٱ]/g,'ا')
+    .replace(/ؤ/g,'و')
+    .replace(/ئ/g,'ي')
+    .replace(/ء/g,'')
+    .replace(/ـ/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function DEF_PURPOSES(){ return (typeof cfg!=='undefined' && cfg.purposes && cfg.purposes.length) ? cfg.purposes : ['إيجار','تأمين','قرض']; }
+const DEFAULT_PURPOSES=new Proxy([],{get(t,k){const a=DEF_PURPOSES();const v=a[k];return typeof v==='function'?v.bind(a):v;}});
+function canonPurpose(p){
+  const k=normAr(p);
+  const hit=DEF_PURPOSES().find(d=>normAr(d)===k);
+  return hit || (p||'').trim();
+}
+
+function daysUntil(due){
+  if(!due) return null;
+  const d = new Date(due+'T00:00:00'); const t = new Date(todayStr()+'T00:00:00');
+  return Math.round((d - t)/86400000);
+}
+function urgency(c){
+  if(c.status!=='مستحق') return 'none';
+  const dd = daysUntil(c.dueDate);
+  if(dd===null) return 'none';
+  if(dd < 0) return 'overdue';
+  if(dd <= ((typeof cfg!=='undefined'&&cfg.soonDays!=null)?cfg.soonDays:7)) return 'soon';
+  return 'none';
+}
+
+function statusBadge(c){
+  const u = urgency(c);
+  let cls='bg-slate-100 text-slate-600', label=c.status;
+  if(c.status==='مستحق'){
+    if(u==='overdue'){ cls='bg-red-100 text-red-700'; label='متأخر'; }
+    else if(u==='soon'){ cls='bg-amber-100 text-amber-700'; label='قرب الاستحقاق'; }
+    else { cls='bg-sky-100 text-sky-700'; label='مستحق'; }
+  } else if(c.status==='اتصرف'){ cls='bg-emerald-100 text-emerald-700'; }
+  else if(c.status==='مرتجع'){ cls='bg-orange-100 text-orange-700'; }
+  else if(c.status==='ملغي'){ cls='bg-slate-200 text-slate-500 line-through'; }
+  return '<span class="px-2.5 py-1 rounded-full text-xs font-bold '+cls+'">'+label+'</span>';
+}
+
+function sumAmount(list){ return list.reduce((s,c)=>s+(Number(c.amount)||0),0); }
+
+// ---------- summary ----------
+function renderSummary(list){
+  const data = list || checks;
+  const due = data.filter(c=>c.status==='مستحق');
+  const overdue = due.filter(c=>urgency(c)==='overdue');
+  const soon = due.filter(c=>urgency(c)==='soon');
+  const cashed = data.filter(c=>c.status==='اتصرف');
+
+  const cards=[
+    {t:'إجمالي المستحق', v:fmt(sumAmount(due)), c:due.length, color:'sky'},
+    {t:'متأخرة', v:fmt(sumAmount(overdue)), c:overdue.length, color:'red'},
+    {t:'قريبة الاستحقاق ('+((typeof cfg!=='undefined'?cfg.soonDays:7))+' أيام)', v:fmt(sumAmount(soon)), c:soon.length, color:'amber'},
+    {t:'تم صرفها', v:fmt(sumAmount(cashed)), c:cashed.length, color:'emerald'},
+  ];
+  const map={sky:'border-sky-400 text-sky-700',red:'border-red-400 text-red-700',amber:'border-amber-400 text-amber-700',emerald:'border-emerald-400 text-emerald-700'};
+  document.getElementById('summary').innerHTML = cards.map(k=>
+    '<div class="bg-white rounded-xl shadow-sm p-4 border-r-4 '+map[k.color]+'">'+
+      '<div class="flex items-center justify-between mb-1">'+
+        '<p class="text-xs font-bold text-slate-500">'+k.t+'</p>'+
+        '<span class="text-xs font-bold '+map[k.color].split(' ')[1]+'">'+k.c+' شيك</span>'+
+      '</div>'+
+      '<p class="text-lg font-extrabold text-slate-800 num leading-tight">'+k.v+' <span class="text-xs text-slate-400">جنيه</span></p>'+
+    '</div>').join('');
+}
+
+// ---------- multi-select filters ----------
+const STATUS_OPTS=['مستحق','اتصرف','مرتجع','ملغي'];
+let selStatus=[], selPurpose=[], selBank=[], selLoc=[];
+
+function ddItem(group,val,checked){
+  return '<label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-sm">'+
+    '<input type="checkbox" value="'+val+'" '+(checked?'checked':'')+' onchange="onDDChange(\''+group+'\')" class="w-4 h-4 accent-slate-700">'+
+    '<span>'+val+'</span></label>';
+}
+function buildStatusDD(){
+  document.getElementById('ddStatus').innerHTML = STATUS_OPTS.map(v=>ddItem('status',v,selStatus.includes(v))).join('');
+}
+function buildPurposeDD(){
+  // map normalized-key -> display form (defaults take priority)
+  const map={};
+  DEF_PURPOSES().forEach(d=>{ map[normAr(d)]=d; });
+  checks.forEach(c=>{ if(c.purpose){ const k=normAr(c.purpose); if(!(k in map)) map[k]=c.purpose.trim(); } });
+  const opts=Object.values(map);
+  // drop any selected purpose whose normalized key no longer exists
+  const keys=opts.map(normAr);
+  selPurpose = selPurpose.filter(p=>keys.includes(normAr(p)));
+  document.getElementById('ddPurpose').innerHTML = opts.map(v=>ddItem('purpose',v,selPurpose.some(p=>normAr(p)===normAr(v)))).join('');
+  setLabel('lblPurpose', selPurpose);
+}
+function buildBankDD(){
+  const map={};
+  const pool = currentBank ? checks.filter(c=>bankKey(c.bank)===bankKey(currentBank)) : checks;
+  pool.forEach(c=>{ const b=(c.bank||'').trim(); if(b){ const k=b.toLowerCase(); if(!(k in map)) map[k]=b; } });
+  const opts=Object.values(map);
+  const keys=opts.map(b=>b.toLowerCase());
+  selBank = selBank.filter(b=>keys.includes(b.toLowerCase()));
+  document.getElementById('ddBank').innerHTML = opts.length
+    ? opts.map(v=>ddItem('bank',v,selBank.some(b=>b.toLowerCase()===v.toLowerCase()))).join('')
+    : '<div class="px-2 py-1.5 text-xs text-slate-400">لا توجد بنوك مسجلة</div>';
+  setLabel('lblBank', selBank);
+}
+const NO_SIGN='(بدون توقيع)';
+function buildLocDD(){
+  const map={};
+  checks.forEach(c=>{ const v=(c.location||'').trim(); if(v){ const k=normAr(v).toLowerCase(); if(!(k in map)) map[k]=v; } });
+  const opts=Object.values(map);
+  const hasBlank = checks.some(c=>!(c.location||'').trim());
+  const keys=opts.map(v=>normAr(v).toLowerCase());
+  selLoc = selLoc.filter(v=> v===NO_SIGN ? hasBlank : keys.includes(normAr(v).toLowerCase()));
+  let html='';
+  if(hasBlank) html += ddItem('loc',NO_SIGN,selLoc.includes(NO_SIGN));
+  html += opts.map(v=>ddItem('loc',v,selLoc.some(s=>normAr(s).toLowerCase()===normAr(v).toLowerCase()))).join('');
+  document.getElementById('ddLoc').innerHTML = html || '<div class="px-2 py-1.5 text-xs text-slate-400">لا توجد توقيعات مسجلة</div>';
+  setLabel('lblLoc', selLoc);
+  const dl=document.getElementById('locationList');
+  if(dl) dl.innerHTML = allSigners().map(v=>'<option value="'+String(v).replace(/"/g,'&quot;')+'"></option>').join('');
+}
+function onDDChange(group){
+  const id = group==='status'?'ddStatus' : group==='purpose'?'ddPurpose' : group==='bank'?'ddBank' : 'ddLoc';
+  const panel=document.getElementById(id);
+  const vals=[...panel.querySelectorAll('input:checked')].map(i=>i.value);
+  if(group==='status'){ selStatus=vals; setLabel('lblStatus',vals); }
+  else if(group==='purpose'){ selPurpose=vals; setLabel('lblPurpose',vals); }
+  else if(group==='bank'){ selBank=vals; setLabel('lblBank',vals); }
+  else { selLoc=vals; setLabel('lblLoc',vals); }
+  render();
+}
+function setLabel(id,vals){ document.getElementById(id).textContent = vals.length ? vals.join('، ') : 'الكل'; }
+function toggleDD(e,id){
+  e.stopPropagation();
+  ['ddStatus','ddPurpose','ddBank','ddLoc'].forEach(d=>{ if(d!==id) document.getElementById(d).classList.add('hidden'); });
+  document.getElementById(id).classList.toggle('hidden');
+}
+document.addEventListener('click',()=>{
+  document.getElementById('ddStatus').classList.add('hidden');
+  document.getElementById('ddPurpose').classList.add('hidden');
+  document.getElementById('ddBank').classList.add('hidden');
+  document.getElementById('ddLoc').classList.add('hidden');
+});
+
+// ---------- table ----------
+function getFiltered(){
+  const s=document.getElementById('fSearch').value.trim().toLowerCase();
+  const from=document.getElementById('fFrom').value;
+  const to=document.getElementById('fTo').value;
+  return checks.filter(c=>{
+    if(currentBank && bankKey(c.bank)!==bankKey(currentBank)) return false;
+    if(currentBank && currentCur && curOf(c)!==currentCur) return false;
+    if(selStatus.length && !selStatus.includes(c.status)) return false;
+    if(selPurpose.length){
+      const keys=selPurpose.map(normAr);
+      if(!keys.includes(normAr(c.purpose))) return false;
+    }
+    if(selBank.length){
+      const bl=(c.bank||'').toLowerCase();
+      if(!selBank.some(b=>b.toLowerCase()===bl)) return false;
+    }
+    if(selLoc.length){
+      const raw=(c.location||'').trim();
+      const lv=normAr(raw).toLowerCase();
+      const ok = selLoc.some(v=> v===NO_SIGN ? raw==='' : normAr(v).toLowerCase()===lv);
+      if(!ok) return false;
+    }
+    const d=c.dueDate||'';
+    if(from && (!d || d<from)) return false;
+    if(to && (!d || d>to)) return false;
+    if(s){
+      const hay=normAr((c.checkNumber+' '+c.beneficiaryName+' '+c.unit+' '+c.bank+' '+(c.location||'')).toLowerCase());
+      if(!hay.includes(normAr(s))) return false;
+    }
+    return true;
+  }).sort(sortCmp);
+}
+function sortCmp(a,b){
+  const mode=(document.getElementById('fSort')||{}).value||'due_asc';
+  if(mode==='cashed_first' || mode==='uncashed_first'){
+    const ac = a.status==='اتصرف' ? 0 : 1;
+    const bc = b.status==='اتصرف' ? 0 : 1;
+    let g = (mode==='cashed_first') ? (ac-bc) : (bc-ac);
+    if(g!==0) return g;
+    return (a.dueDate||'').localeCompare(b.dueDate||'');
+  }
+  if(mode==='due_desc') return (b.dueDate||'').localeCompare(a.dueDate||'');
+  return (a.dueDate||'').localeCompare(b.dueDate||'');
+}
+
+function rowClass(c){
+  const u=urgency(c);
+  if(u==='overdue') return 'bg-red-50';
+  if(u==='soon') return 'bg-amber-50';
+  return '';
+}
+
+function updatePrintHead(list){
+  const from=document.getElementById('fFrom').value;
+  const to=document.getElementById('fTo').value;
+  const sr=document.getElementById('fSearch').value.trim();
+  const parts=[];
+  if(selStatus.length) parts.push('الحالة: '+selStatus.join('، '));
+  if(selPurpose.length) parts.push('الغرض: '+selPurpose.join('، '));
+  if(currentBank) parts.push('البنك: '+currentBank);
+  else if(selBank.length) parts.push('البنك: '+selBank.join('، '));
+  if(selLoc.length) parts.push('توقيع: '+selLoc.join('، '));
+  if(from||to) parts.push('استحقاق من '+(from||'البداية')+' إلى '+(to||'النهاية'));
+  if(sr) parts.push('بحث: '+sr);
+  const filterTxt = parts.length? parts.join(' · ') : 'كل الشيكات';
+  const cov=coverageCalc();
+  const tval=(cov.time&&cov.time!=='—')?cov.time:'—';
+  document.getElementById('printHead').innerHTML =
+    (function(){
+      const codes=Object.keys(cov.byCur);
+      if(!codes.length) return '';
+      return '<div style="display:flex;gap:8px;">'+codes.map(code=>{
+        const c=curBy(code);
+        return '<div style="flex:1;position:relative;overflow:hidden;background:'+c.color+'14;border:1px solid '+c.color+';border-radius:10px;padding:7px 10px;text-align:center;">'+
+          '<span style="position:absolute;inset:4px;border:1px solid '+c.color+'55;border-radius:7px;"></span>'+
+          '<div style="position:relative;">'+
+            '<div style="font-size:10px;font-weight:700;color:'+c.color+';">رصيد البنك — '+c.nameAr+'</div>'+
+            '<div style="font-size:16px;font-weight:800;direction:ltr;margin-top:1px;color:'+c.color+';">'+fmt(cov.byCur[code])+' <span style="font-size:10px;font-weight:600;">'+c.symbol+'</span></div>'+
+          '</div></div>';
+      }).join('')+'</div>';
+    })()+
+    (function(){
+      const others=Object.keys(cov.byCur).filter(c=>c!==BASE_CUR && curRate(c));
+      if(!others.length) return '';
+      return '<div style="text-align:center;font-size:10px;font-weight:700;color:#334155;margin:5px 0 1px;">أسعار الصرف: '+
+        others.map(c=>'1 '+curSym(c)+' = '+fmt(curRate(c))+' '+cfg.currencyShort).join(' · ')+'</div>';
+    })()+
+    (Object.keys(cov.byCur).length>1
+      ? '<div style="display:flex;justify-content:center;gap:90px;font-size:15px;color:#64748b;margin:1px 0;font-weight:700;"><span>↙</span><span>↘</span></div>'
+      : '')+
+    '<div style="max-width:290px;margin:1px auto 4px;border:2px solid #1e293b;background:#f8fafc;border-radius:9px;padding:5px 12px;text-align:center;">'+
+      '<div style="font-size:10px;font-weight:700;color:#64748b;">إجمالي المتاح بالجنيه</div>'+
+      '<div style="font-size:16px;font-weight:800;color:#0f172a;direction:ltr;">'+fmt(cov.avail)+'</div></div>'+
+    '<div style="text-align:center;font-size:10px;color:#475569;margin:0 0 7px;">توقيت إدخال الرصيد: '+tval+'</div>'+
+    '<div style="border-top:2px solid #1e293b;padding-top:5px;text-align:center;">'+
+      (function(){
+        const bk = currentBank ? banks[currentBank] : null;
+        const logo = (bk&&bk.logo) ? '<img src="'+bk.logo+'" style="height:26px;object-fit:contain;vertical-align:middle;margin-left:6px;">' : '';
+        const nm = currentBank ? currentBank : 'كل البنوك';
+        return '<div style="font-size:14px;font-weight:800;">'+logo+'<span style="vertical-align:middle;">'+nm+' — رصيد البنك ومتابعة الشيكات</span></div>'+
+               '<div style="font-size:10px;color:#64748b;">'+cfg.companyName+'</div>';
+      })()+
+      '<div style="font-size:10px;color:#475569;margin-top:3px;line-height:1.55;overflow-wrap:anywhere;">'+
+        'عوامل التصفية: '+filterTxt+' &nbsp;|&nbsp; تاريخ الطباعة: '+todayStr()+' &nbsp;|&nbsp; عدد الشيكات المعروضة: '+list.length+' &nbsp;|&nbsp; الإجمالي: '+fmt(sumAmount(list))+' جنيه'+
+      '</div>'+
+    '</div>';
+}
+
+// ================= سجل العملات =================
+const CUR_KEY='osool_currencies_v1';
+const BASE_CUR='EGP';
+const CUR_COLORS=['#0891b2','#7c3aed','#db2777','#ea580c','#0d9488','#4f46e5'];
+const CUR_PRESETS=[
+  {code:'EGP', nameAr:'جنيه مصري',      symbol:'ج.م', rate:1,  color:'#ca8a04'},
+  {code:'USD', nameAr:'دولار أمريكي',   symbol:'$',   rate:'', color:'#16a34a'},
+  {code:'EUR', nameAr:'يورو',           symbol:'€',   rate:'', color:'#2563eb'},
+  {code:'SAR', nameAr:'ريال سعودي',     symbol:'ر.س', rate:'', color:'#7c3aed'},
+  {code:'AED', nameAr:'درهم إماراتي',   symbol:'د.إ', rate:'', color:'#db2777'},
+  {code:'GBP', nameAr:'جنيه إسترليني',  symbol:'£',   rate:'', color:'#0891b2'}
+];
+let currencies=[];
+
+function loadCurrencies(){
+  try{ const a=JSON.parse(localStorage.getItem(CUR_KEY)); if(Array.isArray(a)&&a.length) currencies=a; }catch(e){ console.error('loadCurrencies',e); }
+  normalizeCurrencies();
+}
+function normalizeCurrencies(){
+  if(!Array.isArray(currencies) || !currencies.length) currencies=CUR_PRESETS.map(c=>Object.assign({},c));
+  currencies=currencies.filter(c=>c && c.code);
+  if(!currencies.some(c=>c.code===BASE_CUR)) currencies.unshift(Object.assign({},CUR_PRESETS[0]));
+  currencies.forEach(c=>{
+    c.code=String(c.code).toUpperCase();
+    if(!c.nameAr) c.nameAr=c.code;
+    if(!c.symbol) c.symbol=c.code;
+    if(!c.color) c.color='#64748b';
+    if(c.code===BASE_CUR) c.rate=1;
+  });
+}
+function saveCurrencies(){
+  try{ localStorage.setItem(CUR_KEY, JSON.stringify(currencies)); }catch(e){}
+  scheduleSync('settings'); return true;
+}
+function curBy(code){
+  return currencies.find(c=>c.code===code) || {code:code, nameAr:code, symbol:code, rate:'', color:'#64748b'};
+}
+function curRate(code){
+  if(code===BASE_CUR) return 1;
+  const r=parseFloat(String(curBy(code).rate||'').replace(/,/g,''));
+  return (isFinite(r)&&r>0)? r : 0;
+}
+function curSym(code){ return curBy(code).symbol||code; }
+
+// --- عملات وأرصدة البنك ---
+function bankCurs(b){
+  if(!b) return [];
+  if(!Array.isArray(b.cur)) return [];
+  return b.cur.filter(c=>currencies.some(x=>x.code===c));
+}
+function bankBal(b,code){ return (b && b.bal && b.bal[code]!=null) ? b.bal[code] : ''; }
+function bankBalNum(b,code){ return parseFloat(String(bankBal(b,code)).replace(/,/g,''))||0; }
+function bankAvail(b){ return bankCurs(b).reduce((s,c)=>s+bankBalNum(b,c)*curRate(c),0); }
+
+// --- ترحيل الشكل القديم (curEgp/curUsd/egp/usd) للشكل الجديد ---
+function migrateBanks(){
+  let changed=false;
+  Object.values(banks).forEach(b=>{
+    if(!Array.isArray(b.cur)){
+      const arr=[];
+      if(b.curEgp!==false) arr.push('EGP');
+      if(b.curUsd===true)  arr.push('USD');
+      b.cur=arr; b.bal={};
+      if(arr.includes('EGP')) b.bal.EGP=b.egp||'';
+      if(arr.includes('USD')) b.bal.USD=b.usd||'';
+      delete b.curEgp; delete b.curUsd; delete b.egp; delete b.usd;
+      changed=true;
+    }
+    if(!b.bal || typeof b.bal!=='object'){ b.bal={}; changed=true; }
+    if(!Array.isArray(b.signers)){
+      const map={};
+      checks.forEach(c=>{ if(bankKey(c.bank)===bankKey(b.name)){ const v=(c.location||'').trim(); if(v){ const k=normAr(v).toLowerCase(); if(!(k in map)) map[k]=v; } } });
+      b.signers=Object.values(map); changed=true;
+    }
+  });
+  if(changed) saveBanks();
+}
+
+function renderRateSummary(){
+  const el=document.getElementById('rateSummary'); if(!el) return;
+  const others=currencies.filter(c=>c.code!==BASE_CUR && curRate(c.code));
+  el.textContent = others.length
+    ? ('الأسعار: '+others.map(c=>'1 '+c.symbol+' = '+fmt(curRate(c.code))+' '+curSym(BASE_CUR)).join(' · '))
+    : 'مفيش أسعار صرف مسجّلة';
+}
+
+function renderCurBoxes(){
+  const g=document.getElementById('curGrid'); if(!g) return;
+  const b = currentBank ? banks[currentBank] : null;
+  let codes = b ? bankCurs(b) : [];
+  if(currentBank && currentCur) codes = codes.filter(c=>c===currentCur);
+  if(!currentBank){
+    g.style.gridTemplateColumns='1fr';
+    g.innerHTML='<div class="text-center text-xs text-slate-400 py-2">اختَر بنكًا لإدخال أرصدته — الأرقام تحت مجمّعة لكل البنوك</div>';
+    return;
+  }
+  if(!codes.length){
+    g.style.gridTemplateColumns='1fr';
+    g.innerHTML='<div class="text-center text-xs text-slate-400 py-2">مفيش عملات مفعّلة للبنك — افتح «إدارة البنك» وحدّد العملات</div>';
+    return;
+  }
+  g.style.gridTemplateColumns='repeat('+Math.min(codes.length,3)+',minmax(0,1fr))';
+  g.innerHTML=codes.map(code=>{
+    const c=curBy(code);
+    const v=String(bankBal(b,code)||'').replace(/"/g,'&quot;');
+    return '<div class="text-center">'+
+      '<label class="block text-xs font-bold text-slate-600 mb-1.5">'+c.nameAr+'</label>'+
+      '<div class="relative overflow-hidden rounded-lg border" style="background:'+c.color+'14;border-color:'+c.color+';">'+
+        '<span class="absolute inset-1 rounded-md pointer-events-none" style="border:1px solid '+c.color+'55;"></span>'+
+        '<div class="relative flex items-center justify-center gap-2 px-3 py-2">'+
+          '<span class="shrink-0 text-sm font-bold" style="color:'+c.color+';">'+c.symbol+'</span>'+
+          '<input data-cur="'+code+'" oninput="onBalanceInput()" placeholder="0" value="'+v+'" class="curBal num flex-1 min-w-0 bg-transparent text-center text-base font-extrabold outline-none" style="color:'+c.color+';">'+
+        '</div>'+
+      '</div></div>';
+  }).join('');
+}
+
+// ---------- شاشة إدارة العملات ----------
+function openCurAdmin(){
+  renderCurAdmin();
+  const m=document.getElementById('curAdminModal'); m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeCurAdmin(){
+  const m=document.getElementById('curAdminModal'); m.classList.add('hidden'); m.classList.remove('flex');
+  renderRateSummary(); renderCurBoxes(); updateBalanceUI(); renderBanks(); render();
+}
+function renderCurAdmin(){
+  const tb=document.getElementById('curAdminBody'); if(!tb) return;
+  const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;');
+  tb.innerHTML=currencies.map((c,i)=>{
+    const used=bankNames().filter(n=>bankCurs(banks[n]).includes(c.code));
+    const base=(c.code===BASE_CUR);
+    return '<tr class="border-t border-slate-100">'+
+      '<td class="p-2 font-extrabold" style="color:'+c.color+';">'+c.code+(base?' <span class="text-[10px] text-slate-400 font-normal">أساسية</span>':'')+'</td>'+
+      '<td class="p-2"><input value="'+esc(c.nameAr)+'" oninput="curEdit('+i+',\'nameAr\',this.value)" class="w-full border border-slate-200 rounded px-2 py-1 text-sm"></td>'+
+      '<td class="p-2"><input value="'+esc(c.symbol)+'" oninput="curEdit('+i+',\'symbol\',this.value)" class="w-16 border border-slate-200 rounded px-2 py-1 text-sm text-center"></td>'+
+      '<td class="p-2">'+(base
+        ? '<span class="text-slate-400 text-xs">1</span>'
+        : '<input value="'+esc(c.rate)+'" oninput="curEdit('+i+',\'rate\',this.value)" placeholder="0" class="num w-24 border border-slate-200 rounded px-2 py-1 text-sm text-center">')+'</td>'+
+      '<td class="p-2 text-xs text-slate-500 text-center">'+(used.length? used.length+' بنك' : '—')+'</td>'+
+      '<td class="p-2 text-center">'+(base
+        ? '<span class="text-slate-300 text-xs">—</span>'
+        : '<button onclick="curDelete('+i+')" class="needs-delete bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded px-2 py-1 text-xs font-bold">حذف</button>')+'</td>'+
+    '</tr>';
+  }).join('');
+}
+function curEdit(i,field,val){
+  if(!currencies[i]) return;
+  currencies[i][field]=val;
+  saveCurrencies();
+  renderRateSummary(); updateBalanceUI();
+}
+async function curDelete(i){
+  const c=currencies[i]; if(!c || c.code===BASE_CUR) return;
+  const used=bankNames().filter(n=>bankCurs(banks[n]).includes(c.code));
+  if(used.length){ alert('مينفعش تحذف «'+c.nameAr+'» — مستخدمة في: '+used.join(' ، ')+'\nشيلها من عملات البنوك دي الأول.'); return; }
+  if(!await confirmDelete('عملة «'+c.nameAr+'»')) return;
+  currencies.splice(i,1); saveCurrencies(); renderCurAdmin(); renderRateSummary();
+}
+function curAdd(){
+  const code=(document.getElementById('newCurCode').value||'').trim().toUpperCase();
+  const nm  =(document.getElementById('newCurName').value||'').trim();
+  const sym =(document.getElementById('newCurSym').value||'').trim();
+  const rate=(document.getElementById('newCurRate').value||'').trim();
+  if(!code){ alert('اكتب كود العملة (٣ حروف زي KWD)'); return; }
+  if(!nm){ alert('اكتب اسم العملة بالعربي'); return; }
+  if(currencies.some(c=>c.code===code)){ alert('العملة «'+code+'» موجودة بالفعل'); return; }
+  currencies.push({code:code, nameAr:nm, symbol:sym||code, rate:rate, color:CUR_COLORS[currencies.length%CUR_COLORS.length]});
+  saveCurrencies(); renderCurAdmin(); renderRateSummary();
+  ['newCurCode','newCurName','newCurSym','newCurRate'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+}
+
+// ---------- bank balance: timestamp + persistence ----------
+const BAL_KEY='osool_checks_bal_v1';
+function fmtNow(){
+  const d=new Date(); const p=n=>String(n).padStart(2,'0');
+  let h=d.getHours(); const ap=h<12?'ص':'م'; h=h%12||12;
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(h)+':'+p(d.getMinutes())+' '+ap;
+}
+function loadBalances(){
+  try{
+    const b=JSON.parse(localStorage.getItem(BAL_KEY))||{};
+    document.getElementById('balanceTime').textContent = b.time || '—';
+    if(b.rateInfo) document.getElementById('rateInfo').textContent = b.rateInfo;
+  }catch(e){}
+}
+function saveBalances(){
+  try{
+    const prev=JSON.parse(localStorage.getItem(BAL_KEY))||{};
+    prev.time=document.getElementById('balanceTime').textContent;
+    prev.rateInfo=document.getElementById('rateInfo').textContent;
+    localStorage.setItem(BAL_KEY, JSON.stringify(prev));
+  }catch(e){}
+}
+function onBalanceInput(){
+  const t=fmtNow();
+  document.getElementById('balanceTime').textContent=t;
+  if(currentBank && banks[currentBank]){
+    const b=banks[currentBank];
+    b.bal=b.bal||{};
+    document.querySelectorAll('#curGrid .curBal').forEach(inp=>{ b.bal[inp.dataset.cur]=inp.value; });
+    b.time=t;
+    saveBanks();
+  }
+  saveBalances(); updateBalanceUI();
+}
+async function fetchRate(manual){
+  const info=document.getElementById('rateInfo'); if(!info) return;
+  const targets=currencies.filter(c=>c.code!==BASE_CUR);
+  if(!targets.length){ info.textContent='—'; renderRateSummary(); return; }
+  const prev=info.textContent;
+  info.textContent='جاري جلب الأسعار...';
+  try{
+    const r=await fetch('https://open.er-api.com/v6/latest/'+BASE_CUR);
+    const d=await r.json();
+    const rates = d && d.rates;
+    if(!rates) throw new Error('no rates');
+    let n=0, missed=[];
+    targets.forEach(c=>{
+      const v=rates[c.code];
+      if(v && v>0){ c.rate=Math.round((1/v)*10000)/10000; n++; }
+      else missed.push(c.code);
+    });
+    saveCurrencies();
+    info.textContent='تلقائي من النت · '+n+' عملة'+(missed.length?' (تعذّر: '+missed.join('، ')+')':'')+' · '+fmtNow();
+    renderRateSummary(); updateBalanceUI(); renderBanks();
+    const m=document.getElementById('curAdminModal');
+    if(m && !m.classList.contains('hidden')) renderCurAdmin();
+  }catch(e){
+    info.textContent = (prev && prev!=='—' && prev.indexOf('جاري')<0) ? prev+' (تعذّر التحديث)' : 'تعذّر الجلب — اكتب الأسعار يدويًا';
+    renderRateSummary(); updateBalanceUI();
+  }
+  saveBalances();
+}
+function updateBalanceUI(){
+  const cov=coverageCalc();
+  const at=document.getElementById('availTotal');
+  if(at) at.textContent = fmt(cov.avail)+' ج.م';
+  updateCoverageHint();
+}
+
+// ---------- dynamic "إلى تاريخ" shortcut chips ----------
+const AR_MONTHS=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+function fmtChipDate(iso){ const a=iso.split('-'); return (+a[2])+' '+AR_MONTHS[(+a[1])-1]; }
+function upcomingDueDates(){
+  const today=todayStr(); const set=new Set();
+  checks.forEach(c=>{ if(c.status!=='اتصرف' && c.dueDate && c.dueDate>=today) set.add(c.dueDate); });
+  return [...set].sort().slice(0,6);
+}
+function setToDate(d){ document.getElementById('fTo').value=d; render(); }
+function renderDateChips(){
+  const box=document.getElementById('dateChips');
+  const cur=document.getElementById('fTo').value;
+  const on='px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-white';
+  const off='px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200';
+  let html='<button type="button" onclick="setToDate(\'\')" class="'+(cur===''?on:off)+'">بدون حد</button>';
+  const dates=upcomingDueDates();
+  if(dates.length===0){ html+='<span class="text-xs text-slate-400 self-center">لا توجد استحقاقات قادمة</span>'; }
+  dates.forEach(d=>{ html+='<button type="button" onclick="setToDate(\''+d+'\')" class="'+(cur===d?on:off)+'">لحد '+fmtChipDate(d)+'</button>'; });
+  box.innerHTML=html;
+}
+
+// ---------- default filters ----------
+function applyDefaultFilters(){
+  selStatus=(cfg.defaultStatus&&cfg.defaultStatus.length)?cfg.defaultStatus.slice():['مستحق'];
+  const pset={}; DEF_PURPOSES().forEach(d=>pset[normAr(d)]=d);
+  checks.forEach(c=>{ if(c.purpose) pset[normAr(c.purpose)]=c.purpose; });
+  const exc=(cfg.excludePurposes||[]).map(normAr);
+  selPurpose = Object.values(pset).filter(p=>!exc.includes(normAr(p)));
+  // لو الأغراض القائمة أكتر من المعرّفة، سيب الفلتر مفتوح (الكل) بدل إخفاء بيانات
+  const defined=DEF_PURPOSES().map(normAr);
+  const extras=Object.values(pset).filter(p=>!defined.includes(normAr(p)));
+  if(extras.length && !exc.length) selPurpose=[];
+  if(currentBank){ selBank=[]; }
+  else {
+    const bmap={}; checks.forEach(c=>{ const b=(c.bank||'').trim(); if(b) bmap[b.toLowerCase()]=b; });
+    const want=cfg.defaultBank||'';
+    selBank = want ? Object.values(bmap).filter(b=>bankKey(b)===bankKey(want)) : [];
+  }
+  selLoc = [];                      // التوقيع: الكل
+  setLabel('lblStatus', selStatus);
+  setLabel('lblLoc', selLoc);
+}
+
+function coverageCalc(){
+  let avail=0, entered=false;
+  const byCur={};
+  const src = currentBank ? [currentBank] : bankNames();
+  src.forEach(n=>{
+    const b=banks[n]; if(!b) return;
+    let codes=bankCurs(b);
+    // جوّه حساب محدد: عملته بس، والمقارنة بتبقى عادلة من غير تحويل
+    if(currentBank && currentCur) codes=codes.filter(c=>c===currentCur);
+    codes.forEach(code=>{
+      if(String(bankBal(b,code)).trim()!=='') entered=true;
+      const v=bankBalNum(b,code);
+      byCur[code]=(byCur[code]||0)+v;
+      avail += v*curRate(code);
+    });
+  });
+  const time=(document.getElementById('balanceTime').textContent||'').trim();
+  const list=getFiltered();
+  const total=sumAmount(list);
+  const cashed=sumAmount(list.filter(c=>c.status==='اتصرف'));
+  const required=total-cashed;      // لم يُصرف = المطلوب تغطيته
+  return {entered, byCur, bal:byCur[BASE_CUR]||0, avail, time, total, cashed, required, diff: avail-required};
+}
+function updateCoverageHint(){
+  const el=document.getElementById('coverHint');
+  const cov=coverageCalc();
+  if(!cov.entered){ el.textContent=''; el.className='text-sm font-bold'; return; }
+  if(cov.diff>=0){
+    el.textContent='المتاح يغطّي المطلوب ✓ (فائض '+fmt(cov.diff)+' جنيه)';
+    el.className='text-sm font-bold text-emerald-600';
+  } else {
+    el.textContent='عجز — مطلوب تغطية '+fmt(-cov.diff)+' جنيه';
+    el.className='text-sm font-bold text-red-600';
+  }
+}
+function printReport(){
+  if(currentTab!=='checks') setBankTab('checks');
+  render();
+  const prev=document.title;
+  document.title=(currentBank? (currentBank+' - ') : '')+'موقف البنك وتغطية الشيكات '+todayStr();
+  const restore=()=>{ document.title=prev; window.removeEventListener('afterprint',restore); };
+  window.addEventListener('afterprint',restore);
+  window.print();
+  setTimeout(restore,1500);
+}
+
+function pcard(label,val,bg,fg,border){
+  return '<div style="flex:1;min-width:120px;background:'+bg+';border:1px solid '+border+';border-radius:10px;padding:7px 10px;text-align:center;">'+
+    '<div style="font-size:10px;color:'+fg+';font-weight:700;opacity:.9;">'+label+'</div>'+
+    '<div style="font-size:14px;font-weight:800;color:'+fg+';margin-top:3px;direction:ltr;">'+fmt(val)+' <span style="font-size:9px;font-weight:600;">جنيه</span></div>'+
+  '</div>';
+}
+
+function fmtFullAr(iso){ const a=iso.split('-'); return (+a[2])+' '+AR_MONTHS[(+a[1])-1]+' '+a[0]; }
+
+function renderPrintSummary(list){
+  const cov=coverageCalc();
+  const toDate=document.getElementById('fTo').value;
+  const heading = 'بيان تغطية الشيكات' + (currentBank ? ' — '+currentBank : '') + (toDate ? ' حتى '+fmtFullAr(toDate) : '');
+  const statuses=[...new Set(list.map(c=>c.status))];
+  const single = statuses.length===1 ? statuses[0] : null;
+  const AL={'مستحق':'المستحق','اتصرف':'المصروف','مرتجع':'المرتجع','ملغي':'الملغي'};
+
+  // بطاقات الإجماليات حسب الحاجة
+  const mainLabel = single ? ('إجمالي '+(AL[single]||single)) : 'إجمالي الشيكات';
+  let cards = pcard(mainLabel, cov.total, '#f1f5f9', '#334155', '#cbd5e1');
+  const mixed = cov.cashed>0 && cov.required>0;
+  if(mixed){
+    cards += pcard('تم صرفها', cov.cashed, '#ecfdf5', '#047857', '#a7f3d0');
+    cards += pcard('لم يُصرف (المطلوب تغطيته)', cov.required, '#fffbeb', '#b45309', '#fde68a');
+  }
+  if(cov.entered){
+    cards += pcard('المتاح بالبنك (مصري + دولار)', cov.avail, '#eff6ff', '#1d4ed8', '#bfdbfe');
+  }
+
+  // شريط المطلوب تغطيته / الفائض — في النص بحجم معقول
+  const box='max-width:520px;margin:11px auto 0;padding:9px 14px;border-radius:10px;text-align:center;';
+  let banner='';
+  if(cov.required<=0){
+    banner='<div style="'+box+'border:2px solid #059669;background:#ecfdf5;">'+
+      '<span style="font-size:12px;font-weight:800;color:#047857;">لا يوجد مطلوب تغطيته — كل الشيكات المعروضة مصروفة</span></div>';
+  } else if(!cov.entered){
+    banner='<div style="'+box+'border:2px solid #d97706;background:#fffbeb;">'+
+      '<span style="font-size:12px;color:#92400e;font-weight:700;">المطلوب تغطيته: </span>'+
+      '<span style="font-size:16px;font-weight:800;color:#b45309;">'+fmt(cov.required)+' جنيه</span></div>';
+  } else if(cov.diff>=0){
+    banner='<div style="'+box+'border:2px solid #059669;background:#ecfdf5;">'+
+      '<span style="font-size:12px;color:#065f46;font-weight:700;">الرصيد يغطّي المطلوب &nbsp;✓&nbsp; — </span>'+
+      '<span style="font-size:16px;font-weight:800;color:#047857;">الفائض: '+fmt(cov.diff)+' جنيه</span></div>';
+  } else {
+    banner='<div style="'+box+'border:2px solid #dc2626;background:#fef2f2;">'+
+      '<span style="font-size:12px;color:#7f1d1d;font-weight:700;">المطلوب تغطيته: </span>'+
+      '<span style="font-size:17px;font-weight:800;color:#dc2626;">'+fmt(-cov.diff)+' جنيه</span></div>';
+  }
+
+  document.getElementById('printSummary').innerHTML =
+    '<div style="font-size:13px;font-weight:800;text-align:center;margin-bottom:7px;">'+heading+'</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:700px;margin:0 auto;">'+cards+'</div>'+
+    banner;
+}
+
+function render(){
+  buildPurposeDD();
+  buildBankDD();
+  buildLocDD();
+  updateBulkBar();
+  renderDateChips();
+  const list=getFiltered();
+  renderSummary(list);
+  updatePrintHead(list);
+  renderPrintSummary(list);
+  updateBalanceUI();
+  const tb=document.getElementById('tbody');
+  const empty=document.getElementById('empty');
+  if(checks.length===0){ tb.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  tb.innerHTML = list.map(c=>{
+    const next = c.status==='مستحق' ? '<button onclick="markCashed(\''+c.id+'\')" title="تحويل لاتصرف" class="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded font-bold">✓</button>' : '';
+    return ''+
+    '<tr class="border-t border-slate-100 '+rowClass(c)+'">'+
+      '<td class="px-2 py-2.5 text-center no-print"><input type="checkbox" data-id="'+c.id+'" onchange="onRowSelect()" '+(selectedIds.has(c.id)?'checked':'')+' class="w-4 h-4 accent-slate-700 rowchk"></td>'+
+      '<td class="px-3 py-2.5 num font-bold text-slate-700">'+(c.checkNumber||'—')+'</td>'+
+      '<td class="px-3 py-2.5 font-semibold">'+(c.beneficiaryName||'—')+'</td>'+
+      '<td class="px-3 py-2.5 text-slate-600">'+(c.purpose||'—')+'</td>'+
+      '<td class="px-3 py-2.5 text-slate-600">'+(c.unit||'—')+'</td>'+
+      '<td class="px-3 py-2.5 text-slate-600 text-xs">'+(c.bank||'—')+'</td>'+
+      '<td class="px-3 py-2.5 text-slate-600 text-xs">'+(c.location||'—')+'</td>'+
+      '<td class="px-3 py-2.5 text-slate-600 text-xs">'+(c.note||'—')+'</td>'+
+      '<td class="px-3 py-2.5 num font-bold whitespace-nowrap">'+fmt(c.amount)+' <span class="text-xs text-slate-400">'+cfg.currency+'</span></td>'+
+      '<td class="px-3 py-2.5 num text-slate-700 text-xs font-semibold">'+(c.dueDate||'—')+'</td>'+
+      '<td class="px-3 py-2.5 num text-emerald-700 text-xs font-semibold">'+(c.cashedDate||'—')+'</td>'+
+      '<td class="px-3 py-2.5">'+statusBadge(c)+'</td>'+
+      '<td class="px-3 py-2.5 no-print">'+
+        '<div class="flex items-center justify-center gap-1">'+
+          next+
+          '<button onclick="editCheck(\''+c.id+'\')" title="تعديل" class="needs-write text-slate-500 hover:bg-slate-100 p-1.5 rounded">'+
+            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>'+
+          '</button>'+
+          '<button onclick="deleteCheck(\''+c.id+'\')" title="حذف" class="needs-delete text-red-500 hover:bg-red-50 p-1.5 rounded">'+
+            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'+
+          '</button>'+
+        '</div>'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+}
+
+// ---------- CRUD ----------
+function fillBankSelect(val){
+  const el=document.getElementById('fld_bank');
+  const names=bankNames();
+  el.innerHTML = names.length
+    ? names.map(b=>'<option value="'+b+'">'+b+'</option>').join('')
+    : '<option value="'+DEFAULT_BANK+'">'+DEFAULT_BANK+'</option>';
+  const want = val || currentBank || DEFAULT_BANK;
+  const hit = names.find(b=>bankKey(b)===bankKey(want));
+  if(hit) el.value=hit;
+  else if(val){ el.innerHTML+='<option value="'+val+'">'+val+'</option>'; el.value=val; }
+}
+function fillCurSelect(selected){
+  const sel=document.getElementById('fld_currency'); if(!sel) return;
+  const bank=(document.getElementById('fld_bank')||{}).value||'';
+  const cur = (selected!==undefined) ? String(selected||'') : (sel.value||'');
+  let codes=bankCurs(banks[bank]);
+  if(!codes.length) codes=[BASE_CUR];
+  if(cur && !codes.includes(cur)) codes=codes.concat([cur]);
+  sel.innerHTML=codes.map(c=>'<option value="'+c+'">'+curBy(c).nameAr+' ('+curBy(c).symbol+')</option>').join('');
+  sel.value = (cur && codes.includes(cur)) ? cur : (codes.includes(BASE_CUR)? BASE_CUR : codes[0]);
+}
+function fillSignerSelect(selected){
+  const sel=document.getElementById('fld_location'); if(!sel) return;
+  const bank=(document.getElementById('fld_bank')||{}).value||'';
+  const cur = (selected!==undefined) ? String(selected||'') : (sel.value||'');
+  let opts=bankSigners(bank);
+  if(cur && !opts.some(o=>normAr(o).toLowerCase()===normAr(cur).toLowerCase())) opts=opts.concat([cur]);
+  const esc=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  sel.innerHTML='<option value="">— بدون —</option>'+opts.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
+  sel.value=cur;
+  const hint=document.getElementById('fld_locHint');
+  if(hint) hint.classList.toggle('hidden', bankSigners(bank).length>0);
+}
+function openForm(){
+  document.getElementById('modalTitle').textContent='إضافة شيك';
+  ['id','checkNumber','beneficiaryName','unit','amount','purpose','location','note'].forEach(f=>document.getElementById('fld_'+f).value='');
+  fillBankSelect('');
+  fillSignerSelect('');
+  fillCurSelect(currentCur||BASE_CUR);
+  document.getElementById('fld_purpose').value=(cfg.purposes&&cfg.purposes[0])||'إيجار';
+  document.getElementById('fld_status').value='مستحق';
+  document.getElementById('fld_issueDate').value='';
+  document.getElementById('fld_dueDate').value='';
+  document.getElementById('fld_cashedDate').value='';
+  showModal();
+}
+function editCheck(id){
+  const c=checks.find(x=>x.id===id); if(!c) return;
+  document.getElementById('modalTitle').textContent='تعديل شيك';
+  fillBankSelect(c.bank||'');
+  ['id','checkNumber','bank','beneficiaryName','purpose','unit','note','amount','issueDate','dueDate','cashedDate','status']
+    .forEach(f=>document.getElementById('fld_'+f).value = c[f]||'');
+  fillSignerSelect(c.location||'');
+  fillCurSelect(c.currency||BASE_CUR);
+  showModal();
+}
+function saveCheck(){
+  const num=document.getElementById('fld_checkNumber').value.trim();
+  const name=document.getElementById('fld_beneficiaryName').value.trim();
+  const amt=document.getElementById('fld_amount').value.trim();
+  const due=document.getElementById('fld_dueDate').value;
+  if(!num||!name||!amt||!due){ alert('من فضلك أدخل: رقم الشيك، الاسم، المبلغ، تاريخ استحقاق الصرف'); return; }
+  const obj={
+    id: document.getElementById('fld_id').value || uid(),
+    checkNumber:num,
+    bank:canonicalBank(document.getElementById('fld_bank').value.trim()||DEFAULT_BANK),
+    beneficiaryName:name,
+    purpose:canonPurpose(document.getElementById('fld_purpose').value.trim()),
+    unit:document.getElementById('fld_unit').value.trim(),
+    location:document.getElementById('fld_location').value.trim(),
+    note:document.getElementById('fld_note').value.trim(),
+    amount: parseFloat(amt.replace(/,/g,''))||0,
+    issueDate:document.getElementById('fld_issueDate').value,
+    dueDate:due,
+    cashedDate:document.getElementById('fld_cashedDate').value,
+    status:document.getElementById('fld_status').value,
+    currency:(document.getElementById('fld_currency').value||BASE_CUR)
+  };
+  const i=checks.findIndex(x=>x.id===obj.id);
+  if(i>=0) checks[i]=obj; else checks.push(obj);
+  save(); syncCheckTxns(); render(); renderBanks(); closeForm();
+}
+async function deleteCheck(id){
+  const c=checks.find(x=>x.id===id);
+  if(!await confirmDelete('الشيك رقم '+((c&&c.checkNumber)||'')+(c&&c.beneficiaryName?(' — '+c.beneficiaryName):''))) return;
+  checks=checks.filter(x=>x.id!==id); save(); render();
+}
+function markCashed(id){
+  const c=checks.find(x=>x.id===id); if(!c) return;
+  c.status='اتصرف';
+  if(!c.cashedDate) c.cashedDate=todayStr();
+  save(); syncCheckTxns(); render(); renderBanks();
+}
+async function clearAll(){
+  if(!checks.length) return;
+  if(!await confirmDelete('كل الشيكات ('+checks.length+')','تأكد إنك صدّرت نسخة Excel الأول.')) return;
+  checks=[]; save(); render();
+}
+function showModal(){ const m=document.getElementById('modal'); m.classList.remove('hidden'); m.classList.add('flex'); }
+function closeForm(){ const m=document.getElementById('modal'); m.classList.add('hidden'); m.classList.remove('flex'); }
+
+// ---------- bulk selection ----------
+const selectedIds=new Set();
+function onRowSelect(){
+  document.querySelectorAll('.rowchk').forEach(cb=>{
+    if(cb.checked) selectedIds.add(cb.dataset.id); else selectedIds.delete(cb.dataset.id);
+  });
+  updateBulkBar();
+}
+function toggleSelectAll(el){
+  document.querySelectorAll('.rowchk').forEach(cb=>{ cb.checked=el.checked; });
+  onRowSelect();
+}
+function clearSelection(){
+  selectedIds.clear();
+  document.querySelectorAll('.rowchk').forEach(cb=>{ cb.checked=false; });
+  const sa=document.getElementById('selAll'); if(sa) sa.checked=false;
+  updateBulkBar();
+}
+function updateBulkBar(){
+  const bar=document.getElementById('bulkBar');
+  document.getElementById('bulkCount').textContent=selectedIds.size;
+  bar.classList.toggle('hidden', selectedIds.size===0);
+}
+function applyBulkNote(clear){
+  if(selectedIds.size===0) return;
+  const inp=document.getElementById('bulkNote');
+  const val = clear ? '' : inp.value.trim();
+  if(!clear && !val){ alert('اكتب البيان الأول'); return; }
+  checks.forEach(c=>{ if(selectedIds.has(c.id)) c.note=val; });
+  save(); inp.value=''; clearSelection(); render();
+}
+
+function applyBulkSign(clear){
+  if(selectedIds.size===0) return;
+  const inp=document.getElementById('bulkSign');
+  const val = clear ? '' : inp.value.trim();
+  if(!clear && !val){ alert('اكتب اسم التوقيع الأول'); return; }
+  checks.forEach(c=>{ if(selectedIds.has(c.id)) c.location=val; });
+  save(); inp.value=''; clearSelection(); render();
+}
+
+// ---------- full backup ----------
+function exportBackup(){
+  const data={
+    app:'osool-checks', version:3, exportedAt:new Date().toISOString(),
+    checks: checks,
+    banks: banks,
+    settings: cfg,
+    templates: templates,
+    prep: prep,
+    currencies: currencies,
+    balances: (()=>{ try{ return JSON.parse(localStorage.getItem(BAL_KEY))||{}; }catch(e){ return {}; } })()
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='نسخة_احتياطية_شيكات_OSOOL_'+todayStr()+'.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function importBackup(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const d=JSON.parse(ev.target.result);
+      if(!d || !Array.isArray(d.checks)) throw new Error('bad file');
+      const summary='محتوى النسخة:\n'+
+        '• '+d.checks.length+' شيك\n'+
+        '• '+(d.banks?Object.keys(d.banks).length:0)+' بنك\n'+
+        '• '+(d.templates?Object.keys(d.templates).length:0)+' قالب\n'+
+        '• '+(d.prep?d.prep.length:0)+' صف تجهيز\n\nسيتم استبدال كل البيانات الحالية. متابعة؟';
+      if(!confirm(summary)) { e.target.value=''; return; }
+      checks = d.checks.map(c=>Object.assign({id:uid()},c));
+      save();
+      if(d.settings && typeof d.settings==='object'){ cfg=Object.assign({},CFG_DEFAULTS,d.settings); saveCfg(); applyCfg(); }
+      if(Array.isArray(d.currencies) && d.currencies.length){ currencies=d.currencies; normalizeCurrencies(); saveCurrencies(); }
+      if(d.banks && typeof d.banks==='object'){ banks=d.banks; migrateBanks(); saveBanks(); }
+      if(d.templates && typeof d.templates==='object'){
+        templates=d.templates;
+        Object.keys(templates).forEach(k=>templates[k]=migrateTpl(templates[k]));
+        saveTemplates();
+      }
+      if(Array.isArray(d.prep)){ prep=d.prep; savePrep(); }
+      if(d.usdRate!==undefined && String(d.usdRate).trim()!==''){
+        const u=currencies.find(c=>c.code==='USD');
+        if(u && !curRate('USD')){ u.rate=d.usdRate; saveCurrencies(); }
+      }
+      renderRateSummary();
+      if(d.balances && typeof d.balances==='object'){
+        localStorage.setItem(BAL_KEY, JSON.stringify(d.balances));
+        loadBalances();
+      }
+      currentBank='';
+      applyDefaultFilters(); buildStatusDD(); render(); renderBanks(); backToBanks();
+      alert('تم الاسترجاع بنجاح.\n\n'+
+        '• '+checks.length+' شيك\n'+
+        '• '+bankNames().length+' بنك\n'+
+        '• '+Object.keys(templates).length+' قالب\n'+
+        '• '+prep.length+' صف تجهيز');
+    }catch(err){ alert('الملف غير صالح — تأكد إنه ملف نسخة احتياطية بصيغة JSON.'); console.error(err); }
+    e.target.value='';
+  };
+  reader.readAsText(file);
+}
+
+// ---------- Excel ----------
+const HEADERS=['تاريخ الكتابة','تاريخ استحقاق الصرف','تاريخ الصرف الفعلي','رقم الشيك','المبلغ','العملة','الاسم','البنك','توقيع','البيان','الغرض','الوحدة / الوحدات','الحالة'];
+
+function excelDateToStr(v){
+  if(v===''||v==null) return '';
+  if(typeof v==='number'){
+    const d=new Date(Math.round((v-25569)*86400000));
+    return d.toISOString().slice(0,10);
+  }
+  const s=String(v).trim();
+  const m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  const m2=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if(m2) return m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');
+  return s;
+}
+
+function importExcel(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+      let added=0;
+      rows.forEach(r=>{
+        const name=String(r['الاسم']||'').trim();
+        const num=String(r['رقم الشيك']||'').trim();
+        if(!name && !num) return;
+        checks.push({
+          id:uid(),
+          checkNumber:num,
+          bank:String(r['البنك']||DEFAULT_BANK).trim()||DEFAULT_BANK,
+          beneficiaryName:name,
+          purpose:canonPurpose(String(r['الغرض']||'').trim()),
+          location:String(r['توقيع']||r['الموقّع']||'').trim(),
+          note:String(r['البيان']||'').trim(),
+          unit:String(r['الوحدة / الوحدات']||r['الوحدة']||'').trim(),
+          amount:parseFloat(String(r['المبلغ']||'0').replace(/,/g,''))||0,
+          issueDate:excelDateToStr(r['تاريخ الكتابة']),
+          dueDate:excelDateToStr(r['تاريخ استحقاق الصرف']||r['تاريخ الشيك']),
+          cashedDate:excelDateToStr(r['تاريخ الصرف الفعلي']),
+          status:String(r['الحالة']||'مستحق').trim()||'مستحق'
+        });
+        added++;
+      });
+      save(); render();
+      alert('تم استيراد '+added+' شيك');
+    }catch(err){ alert('تعذّر قراءة الملف. تأكد من أن الأعمدة مطابقة للنموذج.'); console.error(err); }
+    e.target.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function buildSheet(list){
+  const data=[HEADERS];
+  list.forEach(c=>data.push([c.issueDate,c.dueDate,c.cashedDate,c.checkNumber,c.amount,curBy(curOf(c)).nameAr,c.beneficiaryName,c.bank,c.location,c.note,c.purpose,c.unit,c.status]));
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=HEADERS.map(()=>({wch:16}));
+  return ws;
+}
+function exportExcel(){
+  if(!checks.length){ alert('مفيش بيانات للتصدير'); return; }
+  const wb=XLSX.utils.book_new();
+  const list=getFiltered().length?getFiltered():checks;
+  XLSX.utils.book_append_sheet(wb, buildSheet(list), 'الشيكات');
+  XLSX.writeFile(wb, (currentBank? (currentBank+'_') : '')+'شيكات_OSOOL_'+todayStr()+'.xlsx');
+}
+function downloadTemplate(){
+  const wb=XLSX.utils.book_new();
+  const ws=buildSheet([{issueDate:todayStr(),dueDate:todayStr(),cashedDate:'',checkNumber:'1001',amount:25000,beneficiaryName:'مثال — الاسم المكتوب في الشيك',bank:DEFAULT_BANK,location:'أ. فراس',purpose:'إيجار',unit:'بورتو A-12',status:'مستحق'}]);
+  XLSX.utils.book_append_sheet(wb, ws, 'نموذج');
+  XLSX.writeFile(wb,'نموذج_شيكات_OSOOL.xlsx');
+}
+
+
+// ================= قفل الحذف بكلمة سر =================
+const PWD_KEY='osool_pwd_v1';
+function pwdData(){ try{ return JSON.parse(localStorage.getItem(PWD_KEY))||null; }catch(e){ return null; } }
+function pwdEnabled(){ const d=pwdData(); return !!(d && d.hash); }
+async function sha256(txt){
+  try{
+    if(typeof crypto!=='undefined' && crypto.subtle){
+      const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+      return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+  }catch(e){ console.warn('subtle unavailable',e); }
+  let h1=0x811c9dc5, h2=0x01000193;
+  for(let i=0;i<txt.length;i++){ h1=((h1^txt.charCodeAt(i))*16777619)>>>0; h2=((h2+txt.charCodeAt(i)*(i+7))*2654435761)>>>0; }
+  return 'fb'+h1.toString(16).padStart(8,'0')+h2.toString(16).padStart(8,'0');
+}
+// نقطة واحدة يمرّ منها كل حذف في الأداة
+async function confirmDelete(what, extra){
+  const msg='حذف '+what+'؟'+(extra?('\n'+extra):'');
+  if(!pwdEnabled()) return confirm(msg);
+  if(!confirm(msg)) return false;
+  const pass=prompt('🔒 اكتب كلمة السر لتأكيد حذف: '+what);
+  if(pass===null) return false;
+  const d=pwdData();
+  const h=await sha256((d.salt||'')+pass);
+  if(h!==d.hash){ alert('كلمة السر غلط — الحذف اتلغى.'); return false; }
+  return true;
+}
+function renderPwdBox(){
+  const on=pwdEnabled();
+  const st=document.getElementById('pwdState'); if(!st) return;
+  st.textContent = on? '🔒 مفعّل — كل حذف بيطلب كلمة السر' : '🔓 غير مفعّل — الحذف بيتأكد بسؤال عادي بس';
+  st.className = 'text-xs font-bold '+(on?'text-emerald-700':'text-slate-500');
+  document.getElementById('pwdSetBtn').textContent = on? 'تغيير كلمة السر' : 'تفعيل كلمة السر';
+  document.getElementById('pwdOffBtn').classList.toggle('hidden', !on);
+  document.getElementById('pwdOld').classList.toggle('hidden', !on);
+}
+async function pwdSet(){
+  const d=pwdData();
+  if(pwdEnabled()){
+    const old=document.getElementById('pwdOld').value;
+    if(!old){ alert('اكتب كلمة السر الحالية'); return; }
+    if(await sha256((d.salt||'')+old) !== d.hash){ alert('كلمة السر الحالية غلط'); return; }
+  }
+  const a=document.getElementById('pwdNew').value, b=document.getElementById('pwdNew2').value;
+  if(!a || a.length<4){ alert('كلمة السر لازم تكون 4 حروف على الأقل'); return; }
+  if(a!==b){ alert('التأكيد مش مطابق'); return; }
+  const salt=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  try{ localStorage.setItem(PWD_KEY, JSON.stringify({salt:salt, hash: await sha256(salt+a)})); }
+  catch(e){ alert('تعذّر الحفظ'); return; }
+  ['pwdOld','pwdNew','pwdNew2'].forEach(id=>document.getElementById(id).value='');
+  renderPwdBox();
+  alert('تم. لو نسيت كلمة السر مفيش طريقة استرجاع — هتحتاج تمسحها من إعدادات المتصفح.');
+}
+async function pwdOff(){
+  const d=pwdData(); if(!d) return;
+  const old=document.getElementById('pwdOld').value;
+  if(!old){ alert('اكتب كلمة السر الحالية عشان تلغيها'); return; }
+  if(await sha256((d.salt||'')+old) !== d.hash){ alert('كلمة السر غلط'); return; }
+  localStorage.removeItem(PWD_KEY);
+  ['pwdOld','pwdNew','pwdNew2'].forEach(id=>document.getElementById(id).value='');
+  renderPwdBox();
+}
+
+// ================= القوائم المنسدلة في شريط الأدوات =================
+const TOOL_MENUS=['mExpChk','mChqChk','mExpTxn','mChqTxn','moreMenu'];
+function closeMenus(){ TOOL_MENUS.forEach(id=>{ const e=document.getElementById(id); if(e) e.classList.add('hidden'); }); }
+function toggleMenu(e,id){
+  e.stopPropagation();
+  const t=document.getElementById(id); const wasOpen = t && !t.classList.contains('hidden');
+  closeMenus();
+  if(t && !wasOpen) t.classList.remove('hidden');
+}
+document.addEventListener('click',closeMenus);
+// أي خطأ غير متوقع يظهر للمستخدم بدل ما الزر يفضل ميت
+window.addEventListener('error', e=>{
+  const gate=document.getElementById('loginGate');
+  if(gate && !gate.classList.contains('hidden')){
+    const box=document.getElementById('loginMsg');
+    if(box){ box.textContent='حصل خطأ: '+(e.message||'غير معروف'); box.classList.remove('hidden'); }
+  }
+});
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  const open=['txnFormModal','modal','curAdminModal','bankFormModal','settingsModal']
+    .map(id=>document.getElementById(id))
+    .find(m=>m && !m.classList.contains('hidden'));
+  if(!open) return;
+  const fn={txnFormModal:'closeTxnForm', modal:'closeForm', curAdminModal:'closeCurAdmin',
+            bankFormModal:'closeBankForm', settingsModal:'closeSettings'}[open.id];
+  if(typeof window[fn]==='function') window[fn]();
+});
+function closeMoreMenu(){ const e=document.getElementById('moreMenu'); if(e) e.classList.add('hidden'); }
+function toggleMoreMenu(e){
+  e.stopPropagation();
+  const t=document.getElementById('moreMenu');
+  const wasOpen = t && !t.classList.contains('hidden');
+  closeMenus();
+  if(t && !wasOpen) t.classList.remove('hidden');
+}
+
+// ================= Excel / PDF لحركات الحساب =================
+const TXN_HEADERS=['التاريخ','البيان','نوع العملية','رقم الشيك / العملية','ملاحظات','العملة','وارد','منصرف','الحالة'];
+const TXN_STATUS_AR={temp:'بانتظار المطابقة', confirmed:'مؤكدة'};
+
+function txnRowsAoA(list){
+  return list.map(t=>[
+    t.date||'', t.desc||'', t.method||'', t.ref||'', t.notes||'', curBy(curOf(t)).nameAr,
+    t.dir==='in'?(Number(t.amount)||0):'',
+    t.dir==='out'?(Number(t.amount)||0):'',
+    TXN_STATUS_AR[t.status]||'بانتظار المطابقة'
+  ]);
+}
+function txnSheet(list){
+  const ws=XLSX.utils.aoa_to_sheet([TXN_HEADERS].concat(txnRowsAoA(list)));
+  ws['!cols']=[{wch:12},{wch:28},{wch:16},{wch:18},{wch:30},{wch:12},{wch:14},{wch:14},{wch:16}];
+  return ws;
+}
+function downloadTxnTemplate(){
+  const sample=[{date:todayStr(),desc:'مثال — تحويل من مالك',method:'تحويل',ref:'TX-0001',notes:'ملاحظة اختيارية',dir:'in',amount:25000,status:'temp'}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, txnSheet(sample), 'نموذج');
+  XLSX.writeFile(wb,'نموذج_حركات_حساب_OSOOL.xlsx');
+}
+function exportTxnsExcel(){
+  if(!currentBank){ alert('اختَر بنكًا الأول'); return; }
+  const list=txnsOf(currentBank);
+  if(!list.length){ alert('مفيش حركات للتصدير'); return; }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, txnSheet(list), 'حركات الحساب');
+  XLSX.writeFile(wb,'حركات_'+currentBank+'_'+todayStr()+'.xlsx');
+}
+function importTxnsExcel(e){
+  const f=e.target.files[0]; if(!f) return;
+  if(!currentBank){ alert('اختَر بنكًا الأول عشان تستورد حركاته'); e.target.value=''; return; }
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:'',raw:true});
+      if(!rows.length){ alert('الملف فاضي'); return; }
+      const hkey=x=>normAr(x).replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[\/\-_.]/g,' ').replace(/\s+/g,' ').trim();
+      const pick=(r,names)=>{
+        for(const k in r){ if(names.some(n=>hkey(k).indexOf(hkey(n))>=0)) return r[k]; }
+        return '';
+      };
+      let added=0, skipped=0;
+      rows.forEach(r=>{
+        const inAmt =parseFloat(String(pick(r,['وارد'])||'').replace(/,/g,''))||0;
+        const outAmt=parseFloat(String(pick(r,['منصرف','صادر'])||'').replace(/,/g,''))||0;
+        if(!inAmt && !outAmt){ skipped++; return; }
+        const d = excelDateToStr(pick(r,['التاريخ']));
+        if(!d){ skipped++; return; }
+        const st=hkey(String(pick(r,['الحالة'])||''));
+        txns.push({
+          id:'t'+Date.now()+Math.random().toString(36).slice(2,7),
+          bank:currentBank, date:d, currency: currentCur||BASE_CUR,
+          dir: inAmt? 'in':'out',
+          amount: inAmt||outAmt,
+          desc:String(pick(r,['البيان','الوصف'])||'حركة').trim()||'حركة',
+          method:String(pick(r,['نوع العملية','الطريقة','النوع'])||'أخرى').trim()||'أخرى',
+          ref:String(pick(r,['رقم الشيك','رقم العملية','المرجع'])||'').trim(),
+          notes:String(pick(r,['ملاحظات'])||'').trim(),
+          status: st.indexOf(hkey('مؤكد'))>=0 ? 'confirmed' : 'temp'
+        });
+        added++;
+      });
+      saveTxns(); renderTxns(); renderBanks();
+      alert('تم استيراد '+added+' حركة'+(skipped?('\n'+skipped+' صف اتخطى (تاريخ أو مبلغ ناقص)'):''));
+    }catch(err){ console.error(err); alert('تعذّر قراءة الملف: '+err.message); }
+    e.target.value='';
+  };
+  rd.readAsArrayBuffer(f);
+}
+function printTxns(){
+  if(!currentBank){ alert('اختَر بنكًا الأول'); return; }
+  if(currentTab!=='txns') setBankTab('txns');
+  const b=balancesOf(currentBank);
+  const list=txnsOf(currentBank);
+  document.getElementById('txnPrintHead').innerHTML =
+    '<div style="text-align:center;margin-bottom:8px;">'+
+      '<div style="font-size:17px;font-weight:800;color:#0f172a;">كشف حركات الحساب — '+currentBank+'</div>'+
+      '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+list.length+' حركة · تاريخ الطباعة '+fmtFullAr(todayStr())+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;">'+
+      pcard('الرصيد الافتتاحي', b.opening, '#f8fafc','#334155','#cbd5e1')+
+      pcard('الرصيد المؤكد',   b.confirmed,'#ecfdf5','#065f46','#a7f3d0')+
+      pcard('الرصيد المتوقع',  b.expected, '#f0f9ff','#075985','#bae6fd')+
+    '</div>';
+  const prev=document.title;
+  document.title=currentBank+' - كشف حركات الحساب '+todayStr();
+  const restore=()=>{ document.title=prev; window.removeEventListener('afterprint',restore); };
+  window.addEventListener('afterprint',restore);
+  window.print();
+  setTimeout(restore,1500);
+}
+
+// ================= طباعة الشيكات: القوالب =================
+const TPL_KEY='osool_cheque_tpl_v1';
+const FIELD_DEFS=[
+  {k:'date',      label:'التاريخ',        def:{x:78,y:16,size:12,bold:true, align:'center',on:true}},
+  {k:'payee',     label:'اسم المستفيد',   def:{x:45,y:34,size:12,bold:true, align:'right', on:true}},
+  {k:'amountNum', label:'المبلغ رقمًا',   def:{x:80,y:52,size:13,bold:true, align:'center',on:true}},
+  {k:'words1',    label:'التفقيط سطر 1',  def:{x:45,y:52,size:11,bold:false,align:'right', on:true}},
+  {k:'words2',    label:'التفقيط سطر 2',  def:{x:45,y:64,size:11,bold:false,align:'right', on:true}},
+  {k:'signer',    label:'صاحب التوقيع',    def:{x:80,y:82,size:10,bold:false,align:'center',on:false}},
+  {k:'note',      label:'البيان',          def:{x:30,y:80,size:9, bold:false,align:'right', on:false}},
+  {k:'cross',     label:'التسطير',         def:{x:14,y:24,size:7, bold:false,align:'center',on:true, len:26, angle:60}}
+];
+let templates={}, curTpl=null, curField=null;
+
+function loadTemplates(){
+  try{
+    const raw=localStorage.getItem(TPL_KEY);
+    const obj = raw ? JSON.parse(raw) : null;
+    // لا نمسح ما في الذاكرة لو التخزين فاضي/فشل
+    if(obj && typeof obj==='object'){ Object.keys(obj).forEach(k=>obj[k]=migrateTpl(obj[k])); templates=obj; }
+  }catch(e){ console.error('loadTemplates',e); }
+}
+function saveTemplates(){
+  try{ localStorage.setItem(TPL_KEY, JSON.stringify(templates)); }catch(e){ console.error('saveTemplates',e); }
+  scheduleSync('settings'); return true;
+}
+function saveTplNoImage(){
+  const bk=document.getElementById('tplBank').value.trim();
+  if(!bk){ alert('اكتب اسم البنك'); return; }
+  const sh=document.getElementById('tplShape').value.trim();
+  if(!curTpl) curTpl=blankTpl('');
+  ensureBank(bk);
+  const n = sh ? (bk+' — '+sh) : bk;
+  curTpl.bank=canonicalBank(bk); curTpl.shape=sh; curTpl.name=n;
+  const copy=JSON.parse(JSON.stringify(curTpl)); copy.img='';
+  templates[n]=copy;
+  if(saveTemplates()){ refreshTplSelect(); document.getElementById('tplSelect').value=n; alert('تم حفظ القالب بدون صورة: '+n); showGallery(); }
+}
+function migrateTpl(t){
+  if(!t || typeof t!=='object') return blankTpl('');
+  t.fields = t.fields || {};
+  FIELD_DEFS.forEach(d=>{
+    if(!t.fields[d.k] || typeof t.fields[d.k]!=='object') t.fields[d.k]=Object.assign({},d.def);
+    else Object.keys(d.def).forEach(k=>{ if(t.fields[d.k][k]===undefined) t.fields[d.k][k]=d.def[k]; });
+  });
+  t.w=Number(t.w)||175; t.h=Number(t.h)||80; t.img=t.img||''; t.name=t.name||'';
+  if(!t.bank) t.bank=t.name||'';
+  if(t.shape===undefined) t.shape='';
+  return t;
+}
+function blankTpl(name){
+  const f={};
+  FIELD_DEFS.forEach(d=>f[d.k]=Object.assign({},d.def));
+  return {name:name, bank:currentBank||'', shape:'', img:'', w:175, h:80, fields:f};
+}
+function tplLabel(t){ return (t.shape&&t.shape.trim()) ? (t.bank||'')+' — '+t.shape : (t.name||t.bank||''); }
+function tplsForBank(b){
+  const out={};
+  Object.keys(templates).forEach(k=>{
+    const t=templates[k];
+    if(!b || bankKey(t.bank||t.name)===bankKey(b)) out[k]=t;
+  });
+  return out;
+}
+
+// ---------- التفقيط العربي ----------
+function tafqeet(n){
+  n=Math.floor(Math.abs(Number(n)||0));
+  if(n===0) return 'صفر';
+  const ones=['','واحد','اثنان','ثلاثة','أربعة','خمسة','ستة','سبعة','ثمانية','تسعة'];
+  const teens=['عشرة','أحد عشر','اثنا عشر','ثلاثة عشر','أربعة عشر','خمسة عشر','ستة عشر','سبعة عشر','ثمانية عشر','تسعة عشر'];
+  const tens=['','عشرة','عشرون','ثلاثون','أربعون','خمسون','ستون','سبعون','ثمانون','تسعون'];
+  const huns=['','مائة','مئتان','ثلاثمائة','أربعمائة','خمسمائة','ستمائة','سبعمائة','ثمانمائة','تسعمائة'];
+  function under1000(x){
+    const parts=[];
+    const h=Math.floor(x/100), r=x%100;
+    if(h) parts.push(huns[h]);
+    if(r){
+      if(r<10) parts.push(ones[r]);
+      else if(r<20) parts.push(teens[r-10]);
+      else{
+        const t=Math.floor(r/10), o=r%10;
+        parts.push(o? ones[o]+' و'+tens[t] : tens[t]);
+      }
+    }
+    return parts.join(' و');
+  }
+  const groups=[
+    {d:1000000000,s:['مليار','ملياران','مليارات']},
+    {d:1000000,   s:['مليون','مليونان','ملايين']},
+    {d:1000,      s:['ألف','ألفان','آلاف']}
+  ];
+  const out=[];
+  let rest=n;
+  groups.forEach(g=>{
+    const c=Math.floor(rest/g.d);
+    if(c){
+      rest=rest%g.d;
+      if(c===1) out.push(g.s[0]);
+      else if(c===2) out.push(g.s[1]);
+      else{
+        const tail=c%100;
+        if(tail>=3 && tail<=10) out.push(under1000(c)+' '+g.s[2]);
+        else if(tail>10)
