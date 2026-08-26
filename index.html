@@ -88,6 +88,23 @@
   </div>
 </div>
 
+<!-- ===== PASSWORD MODAL ===== -->
+<div id="pwdModal" class="fixed inset-0 bg-black/50 z-[110] hidden items-center justify-center p-4 no-print" onclick="if(event.target===this)closePwdModal()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+    <div class="flex items-center justify-between mb-1">
+      <h2 id="pwdTitle" class="text-lg font-extrabold text-slate-800">تغيير كلمة السر</h2>
+      <button id="pwdClose" onclick="closePwdModal()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+    </div>
+    <p id="pwdHint" class="text-xs text-slate-500 mb-4">اكتب كلمة سر جديدة (٦ حروف على الأقل).</p>
+    <div id="pwdMsg" class="hidden text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
+    <label class="block text-xs font-bold text-slate-600 mb-1">كلمة السر الجديدة</label>
+    <input id="pwd1" type="password" autocomplete="new-password" dir="ltr" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-slate-400">
+    <label class="block text-xs font-bold text-slate-600 mb-1">تأكيد كلمة السر</label>
+    <input id="pwd2" type="password" autocomplete="new-password" dir="ltr" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-4 outline-none focus:ring-2 focus:ring-slate-400">
+    <button id="pwdBtn" onclick="savePassword()" class="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-bold">حفظ</button>
+  </div>
+</div>
+
 <div id="appRoot" class="hidden max-w-7xl mx-auto p-4 md:p-6">
 
   <!-- Header -->
@@ -128,6 +145,7 @@
             <input type="file" accept=".json" class="hidden" onchange="closeMoreMenu();importBackup(event)">
           </label>
           <button onclick="closeMoreMenu();repairUpload()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-amber-700 hover:bg-amber-50">🔧 رفع الناقص</button>
+          <button onclick="closeMoreMenu();openPwdModal()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">🔑 تغيير كلمة السر</button>
           <div class="border-t border-slate-100 mt-1 pt-1">
             <button onclick="closeMoreMenu();doLogout()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50">↪ تسجيل الخروج</button>
           </div>
@@ -3522,6 +3540,64 @@ async function doLogout(){
 }
 
 // ---------------------------------------------------------------------
+//  تغيير كلمة السر
+// ---------------------------------------------------------------------
+let RECOVERY_MODE = false;   // اتفتحت من لينك استعادة الباسورد
+
+function pwdMsg(txt, kind){
+  const e=document.getElementById('pwdMsg');
+  if(!e) return;
+  e.textContent = txt || '';
+  e.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 ' +
+    (kind==='ok' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                 : 'bg-red-50 border border-red-200 text-red-700');
+  e.classList.toggle('hidden', !txt);
+}
+
+function openPwdModal(recovery){
+  RECOVERY_MODE = !!recovery;
+  const m=document.getElementById('pwdModal');
+  m.classList.remove('hidden'); m.classList.add('flex');
+  document.getElementById('pwd1').value='';
+  document.getElementById('pwd2').value='';
+  pwdMsg('');
+  document.getElementById('pwdTitle').textContent = RECOVERY_MODE ? 'تعيين كلمة سر جديدة' : 'تغيير كلمة السر';
+  document.getElementById('pwdHint').textContent  = RECOVERY_MODE
+      ? 'وصلت من لينك الاستعادة. اكتب كلمة السر الجديدة (٦ حروف على الأقل).'
+      : 'اكتب كلمة سر جديدة (٦ حروف على الأقل).';
+  document.getElementById('pwdClose').classList.toggle('hidden', RECOVERY_MODE);
+  setTimeout(()=>document.getElementById('pwd1').focus(), 50);
+}
+
+function closePwdModal(){
+  if(RECOVERY_MODE) return;   // لازم يكمّل التعيين
+  const m=document.getElementById('pwdModal');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+
+async function savePassword(){
+  const p1=document.getElementById('pwd1').value;
+  const p2=document.getElementById('pwd2').value;
+  if(p1.length < 6){ pwdMsg('كلمة السر لازم تكون ٦ حروف على الأقل'); return; }
+  if(p1 !== p2){ pwdMsg('التأكيد مش مطابق'); return; }
+  const btn=document.getElementById('pwdBtn');
+  btn.disabled=true; pwdMsg('');
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  btn.disabled=false;
+  if(error){
+    pwdMsg(/should be different|same as/i.test(error.message)
+           ? 'كلمة السر الجديدة زي القديمة — غيّرها'
+           : error.message);
+    return;
+  }
+  pwdMsg('✅ اتغيّرت. هتخرج دلوقتي عشان تدخل بيها.', 'ok');
+  setTimeout(async ()=>{
+    try{ await sb.auth.signOut(); }catch(e){}
+    location.replace(location.pathname + location.search);
+  }, 1400);
+}
+
+// ---------------------------------------------------------------------
 //  الترحيل لمرة واحدة: رفع البيانات المحلية للسحابة
 // ---------------------------------------------------------------------
 // نسخة مجمّدة من بيانات المتصفح تتاخد مرة واحدة قبل أي كتابة سحابية،
@@ -3749,6 +3825,7 @@ async function boot(){
   ensurePreBackup();                       // قبل أي كتابة على التخزين المحلي
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ showLogin(); return; }
+  if(RECOVERY_MODE) return;                // لينك استعادة: استنى تعيين الباسورد الأول
   ME = session.user;
 
   // الدور
@@ -3817,8 +3894,21 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     return;
   }
   sb = window.supabase.createClient(SB_URL, SB_KEY);
+
+  // لينك استعادة الباسورد: افتح شاشة تعيين كلمة سر جديدة بدل الدخول العادي
+  const _hash = location.hash || '';
+  if(/type=recovery/.test(_hash)) RECOVERY_MODE = true;
+  sb.auth.onAuthStateChange((event)=>{
+    if(event === 'PASSWORD_RECOVERY'){
+      RECOVERY_MODE = true;
+      if(document.getElementById('pwdModal').classList.contains('hidden')) openPwdModal(true);
+    }
+  });
+
   document.getElementById('lgPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  document.getElementById('pwd2').addEventListener('keydown', e=>{ if(e.key==='Enter') savePassword(); });
   await boot();
+  if(RECOVERY_MODE && document.getElementById('pwdModal').classList.contains('hidden')) openPwdModal(true);
 });
 
 </script>
