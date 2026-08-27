@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks v15 — OSOOL Residence</title>
+<title>Banks v17 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v15</span></h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v17</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -400,7 +400,7 @@ window.loadSupabase = function(){
         </div>
       </div>
       <div id="txnPendingInfo" class="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 no-print"></div>
-      <div id="txnDiag" class="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 no-print" dir="ltr"></div>
+      <div id="txnDiag" class="hidden text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 no-print" dir="ltr"></div>
 
   <div class="bg-white rounded-xl shadow-sm p-3 mb-4 no-print">
     <div class="flex flex-wrap items-center gap-2">
@@ -2840,7 +2840,7 @@ function setBankTab(tab){
   if(tp) tp.classList.toggle('hidden', currentTab!=='txns');
   if(currentTab==='txns'){
     if(!currentBank){ // كل البنوك: مفيش حركات مجمّعة
-      document.getElementById('txnBankName').textContent='—';
+      const _bn=document.getElementById('txnBankName'); if(_bn) _bn.textContent='—';
       document.getElementById('txnBody').innerHTML='';
       document.getElementById('txnEmpty').classList.remove('hidden');
       document.getElementById('txnEmpty').textContent='اختَر بنكًا محددًا من القائمة فوق عشان تشوف حركات حسابه';
@@ -3424,15 +3424,16 @@ function renderTxnsInner(){
   const esc0=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const b=balancesOf(currentBank);
   const _c=curBy(currentCur||BASE_CUR);
-  document.getElementById('txnBankName').innerHTML=
+  const _nm=document.getElementById('txnBankName');
+  if(_nm) _nm.innerHTML=
     esc0(currentBank)+' <span class="text-xs font-bold px-2 py-0.5 rounded" style="background:'+_c.color+'14;color:'+_c.color+';">'+_c.nameAr+'</span>';
   const _bk=banks[currentBank]||{};
-  document.getElementById('txnOpening').value =
+  (document.getElementById('txnOpening')||{}).value =
     (_bk.openings && _bk.openings[currentCur]!=null) ? _bk.openings[currentCur]
     : ((currentCur===BASE_CUR && _bk.opening!=null) ? _bk.opening : '');
-  document.getElementById('txnConfirmed').textContent=fmt(b.confirmed);
-  document.getElementById('txnExpected').textContent=fmt(b.expected);
-  document.getElementById('txnPendingInfo').textContent=b.pending+' حركة بانتظار المطابقة (وارد '+fmt(b.pendingIn)+' / منصرف '+fmt(b.pendingOut)+')';
+  (document.getElementById('txnConfirmed')||{}).textContent =fmt(b.confirmed);
+  (document.getElementById('txnExpected')||{}).textContent =fmt(b.expected);
+  (document.getElementById('txnPendingInfo')||{}).textContent =b.pending+' حركة بانتظار المطابقة (وارد '+fmt(b.pendingIn)+' / منصرف '+fmt(b.pendingOut)+')';
 
   ['all','temp','confirmed'].forEach(f=>{
     const el=document.getElementById('txnTab_'+f);
@@ -3474,7 +3475,7 @@ function renderTxnsInner(){
           '<button onclick="delTxn(\''+t.id+'\')" class="needs-delete text-red-500 hover:bg-red-50 rounded px-1.5">✕</button>')+
       '</td></tr>';
   }).join('');
-  document.getElementById('txnBody').innerHTML=rows;
+  (document.getElementById('txnBody')||{}).innerHTML =rows;
   // سطر تشخيص: بيوضح الأرقام الحقيقية لو حصل أي لبس
   const dg=document.getElementById('txnDiag');
   if(dg){
@@ -3485,6 +3486,7 @@ function renderTxnsInner(){
     dg.textContent='تشخيص · محمّل: '+all+' | البنك ده: '+sameBank+' | الحساب ده: '+sameAcct+
       ' | المعروض: '+list.length+' | عملة الشاشة: '+(currentCur||'—')+
       ' | عملات حركات البنك: '+(curs.join(',')||'—');
+    dg.classList.toggle('hidden', list.length>0 || all===0);
   }
   const emptyEl=document.getElementById('txnEmpty');
   emptyEl.classList.toggle('hidden', list.length>0);
@@ -4531,7 +4533,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v15-2026-08-27';
+const APP_VERSION = 'v17-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
