@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks — OSOOL Residence</title>
+<title>Banks v14 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks</h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v14</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -400,6 +400,7 @@ window.loadSupabase = function(){
         </div>
       </div>
       <div id="txnPendingInfo" class="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 no-print"></div>
+      <div id="txnDiag" class="text-[10px] text-slate-400 mb-2 no-print" dir="ltr"></div>
 
   <div class="bg-white rounded-xl shadow-sm p-3 mb-4 no-print">
     <div class="flex flex-wrap items-center gap-2">
@@ -3461,6 +3462,17 @@ function renderTxns(){
       '</td></tr>';
   }).join('');
   document.getElementById('txnBody').innerHTML=rows;
+  // سطر تشخيص: بيوضح الأرقام الحقيقية لو حصل أي لبس
+  const dg=document.getElementById('txnDiag');
+  if(dg){
+    const all=txns.length;
+    const sameBank=txns.filter(t=>bankKey(t.bank)===bankKey(currentBank)).length;
+    const sameAcct=txns.filter(t=>bankKey(t.bank)===bankKey(currentBank) && curOf(t)===currentCur).length;
+    const curs=[...new Set(txns.filter(t=>bankKey(t.bank)===bankKey(currentBank)).map(curOf))];
+    dg.textContent='تشخيص · محمّل: '+all+' | البنك ده: '+sameBank+' | الحساب ده: '+sameAcct+
+      ' | المعروض: '+list.length+' | عملة الشاشة: '+(currentCur||'—')+
+      ' | عملات حركات البنك: '+(curs.join(',')||'—');
+  }
   const emptyEl=document.getElementById('txnEmpty');
   emptyEl.classList.toggle('hidden', list.length>0);
   // لو الحساب ده فاضي بس فيه حركات في حساب تاني، نقول له هي فين بالظبط
@@ -4506,7 +4518,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v13-2026-08-27';
+const APP_VERSION = 'v14-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
