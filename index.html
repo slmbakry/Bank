@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks v17 — OSOOL Residence</title>
+<title>Banks v18 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v17</span></h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v18</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -442,6 +442,13 @@ window.loadSupabase = function(){
           <button id="txnTab_temp" onclick="setTxnFilter('temp')">بانتظار المطابقة</button>
           <button id="txnTab_confirmed" onclick="setTxnFilter('confirmed')">مؤكدة</button>
         </span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-1.5 mb-3 no-print">
+        <span class="text-[11px] font-bold text-slate-400 ml-1">المصدر:</span>
+        <button id="txnSrc_all"    onclick="setTxnSource('all')"></button>
+        <button id="txnSrc_check"  onclick="setTxnSource('check')"></button>
+        <button id="txnSrc_manual" onclick="setTxnSource('manual')"></button>
       </div>
 
       <div class="border border-slate-200 rounded-lg overflow-x-auto">
@@ -2829,6 +2836,7 @@ function addBankPrompt(){
 }
 let currentTab='checks';
 function setBankTab(tab){
+  txnSource='all';
   currentTab = (tab==='txns') ? 'txns' : 'checks';
   const on ='px-4 py-2 rounded-t-lg text-sm font-bold bg-white text-slate-800 border border-b-0 border-slate-200 shadow-sm';
   const off='px-4 py-2 rounded-t-lg text-sm font-bold bg-slate-200/70 text-slate-600 hover:bg-slate-200';
@@ -3403,9 +3411,12 @@ function syncCheckTxns(){
 
 // ---------- شاشة الحركات ----------
 let txnFilter='all';
+let txnSource='all';   // all | check | manual
 function openTxns(){ setBankTab('txns'); }
 function closeTxns(){ setBankTab('checks'); }
 function setTxnFilter(f){ txnFilter=f; renderTxns(); }
+function setTxnSource(v){ txnSource=v; renderTxns(); }
+const isCheckTxn = t => !!t.srcCheckId;
 
 function renderTxns(){
   try{ renderTxnsInner(); }
@@ -3446,6 +3457,26 @@ function renderTxnsInner(){
   let list=txnsOf(currentBank);
   if(txnFilter==='temp') list=list.filter(t=>t.status!=='confirmed');
   if(txnFilter==='confirmed') list=list.filter(t=>t.status==='confirmed');
+
+  // فلتر المصدر: شيكات مقابل حركات أخرى
+  const byStatus=list.slice();
+  const nChk=byStatus.filter(isCheckTxn).length;
+  const nMan=byStatus.length-nChk;
+  const sChk=byStatus.filter(isCheckTxn).reduce((a,t)=>a+signed(t),0);
+  const sMan=byStatus.filter(t=>!isCheckTxn(t)).reduce((a,t)=>a+signed(t),0);
+  if(txnSource==='check')  list=list.filter(isCheckTxn);
+  if(txnSource==='manual') list=list.filter(t=>!isCheckTxn(t));
+  [['all','الكل',byStatus.length,sChk+sMan],
+   ['check','🧾 شيكات',nChk,sChk],
+   ['manual','💵 حركات أخرى',nMan,sMan]].forEach(([k,lbl,n,sum])=>{
+    const el=document.getElementById('txnSrc_'+k);
+    if(!el) return;
+    el.innerHTML = lbl+' <span class="opacity-70">('+n+')</span>'+
+      (n? ' <span class="num text-[10px] opacity-70">'+fmt(sum)+'</span>' : '');
+    el.className = (txnSource===k)
+      ? 'bg-slate-800 text-white rounded-lg px-2.5 py-1 text-[11px] font-bold'
+      : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg px-2.5 py-1 text-[11px] font-bold';
+  });
   list.sort((a,x)=>(a.date||'').localeCompare(x.date||'') || (a.id>x.id?1:-1));
 
   // رصيد جارٍ
@@ -3459,7 +3490,11 @@ function renderTxnsInner(){
     return '<tr class="border-t border-slate-100 '+(t.status!=='confirmed'?'bg-amber-50/40':'')+'">'+
       '<td class="p-2 num text-xs">'+(t.date||'—')+'</td>'+
       '<td class="p-2 text-xs">'+(t.desc||'—')+' '+lock+'</td>'+
-      '<td class="p-2 text-xs"><span class="inline-block bg-slate-100 text-slate-700 rounded px-1.5 py-0.5 font-bold whitespace-nowrap">'+(t.method||'—')+'</span></td>'+
+      '<td class="p-2 text-xs whitespace-nowrap">'+
+        (isCheckTxn(t)
+          ? '<span class="inline-block rounded px-1.5 py-0.5 font-bold" style="background:#fef3c7;color:#92400e;">🧾 '+(t.method||'شيك')+'</span>'
+          : '<span class="inline-block rounded px-1.5 py-0.5 font-bold" style="background:#e0f2fe;color:#075985;">💵 '+(t.method||'—')+'</span>')+
+      '</td>'+
       '<td class="p-2 text-xs num text-slate-600">'+(t.ref||'—')+'</td>'+
       '<td class="p-2 text-xs text-slate-500" style="max-width:180px;overflow-wrap:anywhere;">'+(t.notes? esc(t.notes) : '<span class="text-slate-300">—</span>')+'</td>'+
       '<td class="p-2 num text-emerald-700 font-bold">'+(t.dir==='in'?fmt(t.amount):'')+'</td>'+
@@ -4533,7 +4568,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v17-2026-08-27';
+const APP_VERSION = 'v18-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
