@@ -732,7 +732,7 @@ function getFiltered(){
   const from=document.getElementById('fFrom').value;
   const to=document.getElementById('fTo').value;
   return checks.filter(c=>{
-    if(isHidden(c)) return false;
+    if(!isVisible(c)) return false;
     if(currentBank && bankKey(c.bank)!==bankKey(currentBank)) return false;
     if(currentBank && currentCur && curOf(c)!==currentCur) return false;
     if(selStatus.length && !selStatus.includes(c.status)) return false;
@@ -1129,11 +1129,36 @@ const RULE_FIELDS = {
   bank:     ()=> 'البنك',
   status:   ()=> 'الحالة'
 };
-const RULE_ACTIONS = {
-  guarantee: {ar:'ضمان — مايتحسبش في التغطية', short:'ضمان', color:'#7c3aed'},
-  hide:      {ar:'مخفي — مايظهرش في الشاشة',   short:'مخفي', color:'#64748b'}
+// كل قاعدة بتحدد سلوكها بنفسها — مفيش سلوك مثبّت في الكود
+const RULE_EFFECTS = {
+  coverage:  {ar:'يتحسب في «المطلوب تغطيته»',       def:true},
+  reconcile: {ar:'يدخل طابور المصادقة',             def:true},
+  visible:   {ar:'يظهر في الجدول والتقارير',        def:true},
+  cashedNormal:{ar:'لو اتصرف فعليًا يرجع حركة عادية', def:true}
 };
-function matchRules(){ return (cfg.matchRules && Array.isArray(cfg.matchRules)) ? cfg.matchRules : []; }
+const RULE_PRESETS = {
+  guarantee:{label:'ضمان', color:'#7c3aed', coverage:false, reconcile:false, visible:true,  cashedNormal:true},
+  hide:     {label:'مستبعد', color:'#64748b', coverage:false, reconcile:false, visible:false, cashedNormal:false}
+};
+// ترحيل القواعد القديمة (action) للشكل الجديد
+function normRule(r){
+  if(!r) return null;
+  const out=Object.assign({}, r);
+  if(out.action && out.coverage===undefined){
+    const p=RULE_PRESETS[out.action]||RULE_PRESETS.guarantee;
+    out.label=out.label||p.label; out.color=out.color||p.color;
+    ['coverage','reconcile','visible','cashedNormal'].forEach(k=>out[k]=p[k]);
+    delete out.action;
+  }
+  Object.keys(RULE_EFFECTS).forEach(k=>{ if(out[k]===undefined) out[k]=RULE_EFFECTS[k].def; });
+  if(!out.label) out.label='مميّز';
+  if(!out.color) out.color='#7c3aed';
+  return out;
+}
+function matchRules(){
+  const a=(cfg.matchRules && Array.isArray(cfg.matchRules)) ? cfg.matchRules : [];
+  return a.map(normRule).filter(Boolean);
+}
 
 function ruleHits(c, r){
   if(!r || !r.field || !String(r.value||'').trim()) return false;
@@ -1141,15 +1166,32 @@ function ruleHits(c, r){
   const t = normAr(String(r.value));
   return r.op==='has' ? v.includes(t) : v===t;
 }
-// بترجّع نوع السلوك المطبّق على الشيك، أو '' لو عادي
-function checkAction(c){
-  for(const r of matchRules()){
-    if(RULE_ACTIONS[r.action] && ruleHits(c,r)) return r.action;
-  }
-  return '';
+// أول قاعدة بتنطبق هي اللي بتحكم
+function ruleFor(c){
+  for(const r of matchRules()){ if(ruleHits(c,r)) return r; }
+  return null;
 }
-const isGuarantee = c => checkAction(c)==='guarantee';
-const isHidden    = c => checkAction(c)==='hide';
+// لو الشيك اتصرف فعليًا والقاعدة بتقول «يرجع عادي»، القاعدة بتتوقف
+function effect(c, key){
+  const r=ruleFor(c);
+  if(!r) return RULE_EFFECTS[key].def;
+  if(c.status==='اتصرف' && r.cashedNormal) return RULE_EFFECTS[key].def;
+  return r[key]!==false;
+}
+const inCoverage  = c => effect(c,'coverage');
+const inReconcile = c => effect(c,'reconcile');
+const isVisible   = c => effect(c,'visible');
+// اسم الشارة اللي تظهر جنب الشيك
+function ruleBadge(c){
+  const r=ruleFor(c);
+  if(!r) return null;
+  if(c.status==='اتصرف' && r.cashedNormal) return null;
+  if(r.coverage!==false && r.reconcile!==false && r.visible!==false) return null;
+  return r;
+}
+// أسماء متوافقة مع باقي الكود
+const isGuarantee = c => !inCoverage(c) && isVisible(c);
+const isHidden    = c => !isVisible(c);
 
 function coverageCalc(){
   let avail=0, entered=false;
@@ -1172,8 +1214,9 @@ function coverageCalc(){
   const total=sumAmount(list);
   const cashed=sumAmount(list.filter(c=>c.status==='اتصرف'));
   // الضمانات (تأمين وخلافه) بتتشال من المطلوب — مصدرة كضمان مش للصرف
-  const guar=sumAmount(list.filter(c=>c.status!=='اتصرف' && isGuarantee(c)));
-  const guarCount=list.filter(c=>c.status!=='اتصرف' && isGuarantee(c)).length;
+  const excl=list.filter(c=>c.status!=='اتصرف' && !inCoverage(c));
+  const guar=sumAmount(excl);
+  const guarCount=excl.length;
   const required=total-cashed-guar;
   return {entered, byCur, bal:byCur[BASE_CUR]||0, avail, time, total, cashed,
           guar, guarCount, required, diff: avail-required};
@@ -1295,7 +1338,7 @@ function render(){
       '<td class="px-3 py-2.5 num font-bold whitespace-nowrap">'+fmt(c.amount)+' <span class="text-xs text-slate-400">'+cfg.currency+'</span></td>'+
       '<td class="px-3 py-2.5 num text-slate-700 text-xs font-semibold">'+(c.dueDate||'—')+'</td>'+
       '<td class="px-3 py-2.5 num text-emerald-700 text-xs font-semibold">'+(c.cashedDate||'—')+'</td>'+
-      '<td class="px-3 py-2.5 whitespace-nowrap">'+statusBadge(c)+(isGuarantee(c)?' <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#f3e8ff;color:#7c3aed;">ضمان</span>':'')+'</td>'+
+      '<td class="px-3 py-2.5 whitespace-nowrap">'+statusBadge(c)+(function(){const r=ruleBadge(c); return r? ' <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:'+r.color+'22;color:'+r.color+';">'+esc(r.label)+'</span>':'';})()+'</td>'+
       '<td class="px-3 py-2.5 no-print">'+
         '<div class="flex items-center justify-center gap-1">'+
           next+
@@ -2629,9 +2672,9 @@ function openingOfAcct(bank,cur){
 }
 // إحصاءات حساب واحد — كلها بعملته، من غير أي تحويل
 function acctStats(bank,cur){
-  const list=checksOfAcct(bank,cur).filter(c=>!isHidden(c));
-  const due=list.filter(c=>c.status==='مستحق' && !isGuarantee(c));
-  const guar=list.filter(c=>c.status==='مستحق' && isGuarantee(c));
+  const list=checksOfAcct(bank,cur).filter(isVisible);
+  const due=list.filter(c=>c.status==='مستحق' && inCoverage(c));
+  const guar=list.filter(c=>c.status==='مستحق' && !inCoverage(c));
   const overdue=due.filter(c=>urgency(c)==='overdue');
   const b=banks[bank]||{};
   const bal=bankBalNum(b,cur);
@@ -3086,23 +3129,41 @@ function fillRuleValues(){
   if(f==='purpose') DEF_PURPOSES().forEach(v=>{ map[normAr(v)]=v; });
   dl.innerHTML=Object.values(map).map(v=>'<option value="'+String(v).replace(/"/g,'&quot;')+'"></option>').join('');
 }
+function renderRuleEffects(){
+  const box=document.getElementById('newRuleEffects'); if(!box) return;
+  box.innerHTML=Object.keys(RULE_EFFECTS).map(k=>
+    '<label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">'+
+      '<input type="checkbox" id="eff_'+k+'" '+(RULE_EFFECTS[k].def?'checked':'')+' class="w-4 h-4 accent-slate-700">'+
+      RULE_EFFECTS[k].ar+
+    '</label>').join('');
+}
+function rulePreset(name){
+  const p=RULE_PRESETS[name]; if(!p) return;
+  Object.keys(RULE_EFFECTS).forEach(k=>{ const e=document.getElementById('eff_'+k); if(e) e.checked=!!p[k]; });
+  const l=document.getElementById('newRuleLabel'); if(l) l.value=p.label;
+  const c=document.getElementById('newRuleColor'); if(c) c.value=p.color;
+}
 function renderRules(){
   const box=document.getElementById('rulesList'); if(!box) return;
   const rules=matchRules();
   if(!rules.length){
-    box.innerHTML='<div class="text-xs text-slate-400 bg-white border border-dashed border-slate-200 rounded-lg p-3 text-center">مفيش قواعد — كل الشيكات بتتحسب في التغطية</div>';
+    box.innerHTML='<div class="text-xs text-slate-400 bg-white border border-dashed border-slate-200 rounded-lg p-3 text-center">مفيش قواعد — كل الشيكات بتتعامل بشكل عادي</div>';
     return;
   }
   box.innerHTML=rules.map((r,i)=>{
-    const a=RULE_ACTIONS[r.action]||RULE_ACTIONS.guarantee;
     const n=checks.filter(c=>ruleHits(c,r)).length;
     const sum=sumAmount(checks.filter(c=>ruleHits(c,r) && c.status!=='اتصرف'));
-    return '<div class="bg-white border-2 rounded-xl p-2.5 flex items-center gap-2 flex-wrap" style="border-color:'+a.color+'33;">'+
-      '<span class="text-[11px] font-bold px-2 py-1 rounded-lg" style="background:'+a.color+'14;color:'+a.color+';">'+a.short+'</span>'+
-      '<span class="text-xs text-slate-700"><b>'+(RULE_FIELDS[r.field]?RULE_FIELDS[r.field]():r.field)+'</b> '+
-        (r.op==='has'?'يحتوي على':'=')+' <b>'+esc(r.value)+'</b></span>'+
-      '<span class="text-[11px] text-slate-400">'+n+' شيك'+(sum?' · '+fmt(sum):'')+'</span>'+
-      '<button type="button" onclick="ruleDel('+i+')" class="mr-auto bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg px-2 py-1 text-[11px] font-bold">شيل</button>'+
+    const off=Object.keys(RULE_EFFECTS).filter(k=>r[k]===false)
+      .map(k=>'<span class="text-[10px] bg-red-50 text-red-600 rounded px-1.5 py-0.5">✕ '+RULE_EFFECTS[k].ar+'</span>').join(' ');
+    return '<div class="bg-white border-2 rounded-xl p-2.5" style="border-color:'+r.color+'33;">'+
+      '<div class="flex items-center gap-2 flex-wrap mb-1.5">'+
+        '<span class="text-[11px] font-bold px-2 py-1 rounded-lg" style="background:'+r.color+'14;color:'+r.color+';">'+esc(r.label)+'</span>'+
+        '<span class="text-xs text-slate-700"><b>'+(RULE_FIELDS[r.field]?RULE_FIELDS[r.field]():r.field)+'</b> '+
+          (r.op==='has'?'يحتوي على':'=')+' <b>'+esc(r.value)+'</b></span>'+
+        '<span class="text-[11px] text-slate-400">'+n+' شيك'+(sum?' · '+fmt(sum):'')+'</span>'+
+        '<button type="button" onclick="ruleDel('+i+')" class="mr-auto bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg px-2 py-1 text-[11px] font-bold">شيل</button>'+
+      '</div>'+
+      '<div class="flex flex-wrap gap-1">'+(off||'<span class="text-[10px] text-slate-400">مفيش استثناءات</span>')+'</div>'+
     '</div>';
   }).join('');
 }
@@ -3110,16 +3171,25 @@ function ruleAdd(){
   const field=(document.getElementById('newRuleField').value||'purpose');
   const op=(document.getElementById('newRuleOp').value||'eq');
   const value=(document.getElementById('newRuleValue').value||'').trim();
-  const action=(document.getElementById('newRuleAction').value||'guarantee');
   if(!value){ alert('اكتب القيمة'); return; }
+  const rule={field, op, value,
+    label:(document.getElementById('newRuleLabel').value||'مميّز').trim(),
+    color:(document.getElementById('newRuleColor').value||'#7c3aed')};
+  Object.keys(RULE_EFFECTS).forEach(k=>{
+    const e=document.getElementById('eff_'+k);
+    rule[k] = e ? !!e.checked : RULE_EFFECTS[k].def;
+  });
+  if(Object.keys(RULE_EFFECTS).every(k=>rule[k]===RULE_EFFECTS[k].def)){
+    alert('القاعدة دي مالهاش تأثير — شيل علامة من سلوك واحد على الأقل.'); return;
+  }
   const rules=matchRules().slice();
   if(rules.some(r=>r.field===field && r.op===op && normAr(r.value)===normAr(value))){
     alert('القاعدة دي موجودة بالفعل'); return;
   }
-  rules.push({field, op, value, action});
+  rules.push(rule);
   cfg.matchRules=rules; saveCfg();
   document.getElementById('newRuleValue').value='';
-  renderRules(); render(); renderBanks();
+  renderRules(); syncCheckTxns(); render(); renderBanks(); updatePendBadge();
 }
 function ruleDel(i){
   const rules=matchRules().slice();
@@ -3127,7 +3197,7 @@ function ruleDel(i){
   if(!confirm('شيل قاعدة «'+rules[i].value+'»؟')) return;
   rules.splice(i,1);
   cfg.matchRules=rules; saveCfg();
-  renderRules(); render(); renderBanks();
+  renderRules(); syncCheckTxns(); render(); renderBanks(); updatePendBadge();
 }
 
 function previewLabels(){
@@ -3146,6 +3216,8 @@ function openSettings(){
   document.getElementById('stLabelPurpose').value=cfg.labelPurpose;
   previewLabels();
   fillRuleFields();
+  renderRuleEffects();
+  rulePreset('guarantee');
   renderRules();
   renderPwdBox();
   document.getElementById('stPurposes').value=cfg.purposes.join('\n');
@@ -3269,9 +3341,10 @@ function syncCheckTxns(){
   const byCheck={};
   txns.forEach(t=>{ if(t.srcCheckId) byCheck[t.srcCheckId]=t; });
   checks.forEach(c=>{
-    const live = c.status==='مستحق' || c.status==='اتصرف';
+    // القاعدة هي اللي بتحدد: يدخل طابور المصادقة ولا لأ
+    const live = (c.status==='مستحق' || c.status==='اتصرف') && inReconcile(c);
     let t=byCheck[c.id];
-    if(!live){                       // مرتجع/ملغي: شيل الحركة
+    if(!live){                       // مرتجع/ملغي/ضمان/مخفي: شيل الحركة
       if(t){ txns=txns.filter(x=>x.id!==t.id); changed=true; }
       return;
     }
@@ -4334,7 +4407,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v8-2026-08-27';
+const APP_VERSION = 'v9-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
@@ -4905,12 +4978,13 @@ document.addEventListener('DOMContentLoaded', async ()=>{
         <h3 class="text-sm font-extrabold text-slate-700 mb-2 pb-1 border-b border-slate-100">⚖️ قواعد المطابقة</h3>
         <p class="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3">
           مش كل شيك مصدَّر عشان يتصرف. شيك الضمان (تأمين مثلًا) بيفضل في السجل للمتابعة، لكنه مايتحسبش في «المطلوب تغطيته».
-          حدّد هنا أي بند من أي حقل، والقاعدة هتتطبّق على كل الشيكات تلقائيًا.
+          حدّد الشرط والسلوك بنفسك — إيه اللي يتحسب، وإيه اللي يدخل المصادقة، وإيه اللي يظهر أصلًا.
         </p>
         <div id="rulesList" class="space-y-2 mb-3"></div>
         <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
           <div class="text-xs font-bold text-slate-600 mb-2">إضافة قاعدة</div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+          <div class="text-[11px] font-bold text-slate-500 mb-1">١) الشرط — على أنهي شيكات تنطبق؟</div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
             <select id="newRuleField" onchange="fillRuleValues()" class="border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white"></select>
             <select id="newRuleOp" class="border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white">
               <option value="eq">يساوي تمامًا</option>
@@ -4918,12 +4992,28 @@ document.addEventListener('DOMContentLoaded', async ()=>{
             </select>
             <input id="newRuleValue" list="ruleValues" placeholder="القيمة" class="border border-slate-300 rounded-lg px-2 py-2 text-sm">
             <datalist id="ruleValues"></datalist>
-            <select id="newRuleAction" class="border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white">
-              <option value="guarantee">ضمان — مايتحسبش</option>
-              <option value="hide">مخفي خالص</option>
+          </div>
+
+          <div class="text-[11px] font-bold text-slate-500 mb-1">٢) السلوك — الشيك ده يعمل إيه؟</div>
+          <div id="newRuleEffects" class="bg-white border border-slate-200 rounded-lg p-2.5 mb-3 space-y-1.5"></div>
+
+          <div class="text-[11px] font-bold text-slate-500 mb-1">٣) الشارة اللي تظهر جنبه</div>
+          <div class="grid grid-cols-2 gap-2 mb-3">
+            <input id="newRuleLabel" placeholder="مثال: ضمان" value="ضمان" class="border border-slate-300 rounded-lg px-2 py-2 text-sm">
+            <select id="newRuleColor" class="border border-slate-300 rounded-lg px-2 py-2 text-sm bg-white">
+              <option value="#7c3aed">بنفسجي</option>
+              <option value="#0891b2">تركوازي</option>
+              <option value="#ea580c">برتقالي</option>
+              <option value="#64748b">رمادي</option>
+              <option value="#059669">أخضر</option>
             </select>
           </div>
-          <button type="button" onclick="ruleAdd()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold">+ إضافة القاعدة</button>
+
+          <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="ruleAdd()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold">+ إضافة القاعدة</button>
+            <button type="button" onclick="rulePreset('guarantee')" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-xs font-bold">جاهز: ضمان</button>
+            <button type="button" onclick="rulePreset('hide')" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-xs font-bold">جاهز: استبعاد كامل</button>
+          </div>
         </div>
       </div>
 
