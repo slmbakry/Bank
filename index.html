@@ -3407,9 +3407,15 @@ function closeTxns(){ setBankTab('checks'); }
 function setTxnFilter(f){ txnFilter=f; renderTxns(); }
 
 function renderTxns(){
+  const esc0=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const b=balancesOf(currentBank);
-  document.getElementById('txnBankName').textContent=currentBank;
-  document.getElementById('txnOpening').value = (banks[currentBank]&&banks[currentBank].opening!=null) ? banks[currentBank].opening : '';
+  const _c=curBy(currentCur||BASE_CUR);
+  document.getElementById('txnBankName').innerHTML=
+    esc0(currentBank)+' <span class="text-xs font-bold px-2 py-0.5 rounded" style="background:'+_c.color+'14;color:'+_c.color+';">'+_c.nameAr+'</span>';
+  const _bk=banks[currentBank]||{};
+  document.getElementById('txnOpening').value =
+    (_bk.openings && _bk.openings[currentCur]!=null) ? _bk.openings[currentCur]
+    : ((currentCur===BASE_CUR && _bk.opening!=null) ? _bk.opening : '');
   document.getElementById('txnConfirmed').textContent=fmt(b.confirmed);
   document.getElementById('txnExpected').textContent=fmt(b.expected);
   document.getElementById('txnPendingInfo').textContent=b.pending+' حركة بانتظار المطابقة (وارد '+fmt(b.pendingIn)+' / منصرف '+fmt(b.pendingOut)+')';
@@ -3532,8 +3538,11 @@ function saveTxnForm(){
   if(editingTxn){ const t=txns.find(x=>x.id===editingTxn); Object.assign(t,obj); }
   else txns.push(Object.assign({id:uid()},obj));
   saveTxns(); closeTxnForm();
-  if(bankKey(bank)!==bankKey(currentBank)) openBank(bank,'txns');
-  else { renderTxns(); renderBanks(); }
+  const cur = obj.currency || BASE_CUR;
+  // نفتح حساب الحركة نفسه (بنك + عملة) عشان تبان قدامه فورًا
+  if(bankKey(bank)!==bankKey(currentBank) || cur!==currentCur){
+    openAcct(bank, cur, 'txns');
+  } else { renderTxns(); renderBanks(); updatePendBadge(); }
 }
 
 // =====================================================================
@@ -3994,6 +4003,7 @@ function openApprove(){
   const names=bankNamesSorted();
   sel.innerHTML='<option value="">كل البنوك</option>'+names.map(n=>'<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>').join('');
   sel.value = currentBank || '';
+  apFillCur(currentCur||'');
   document.getElementById('apSearch').value='';
   renderApprove();
   const m=document.getElementById('approveModal'); m.classList.remove('hidden'); m.classList.add('flex');
@@ -4003,12 +4013,24 @@ function closeApprove(){
   renderAll(); updatePendBadge();
 }
 
+function apFillCur(preset){
+  const sel=document.getElementById('apCur'); if(!sel) return;
+  const bank=(document.getElementById('apBank')||{}).value||'';
+  const cur = preset!==undefined ? preset : sel.value;
+  const codes = bank ? bankCurs(banks[bank]) : [...new Set(pendingAll().map(curOf))];
+  sel.innerHTML='<option value="">كل العملات</option>'+
+    codes.map(c=>'<option value="'+c+'">'+curBy(c).nameAr+'</option>').join('');
+  sel.value = codes.includes(cur) ? cur : '';
+  sel.classList.toggle('hidden', codes.length<2);
+}
 function apList(){
   const bank=(document.getElementById('apBank')||{}).value||'';
+  const cur=(document.getElementById('apCur')||{}).value||'';
   const q=normAr(((document.getElementById('apSearch')||{}).value||'')).toLowerCase();
   const base = apShowFuture ? pendingAll() : pendingTxns();
   return base.filter(t=>{
     if(bank && bankKey(t.bank)!==bankKey(bank)) return false;
+    if(cur && curOf(t)!==cur) return false;
     if(!q) return true;
     return [t.desc,t.ref,t.method,String(t.amount),t.notes]
       .some(v=>normAr(String(v||'')).toLowerCase().includes(q));
@@ -4081,9 +4103,11 @@ function renderApprove(){
         '<div class="flex-1 min-w-0">'+
           '<div class="flex items-start justify-between gap-2">'+
             '<span class="font-bold text-sm text-slate-800 leading-tight">'+esc(t.desc||'حركة')+'</span>'+
-            '<span class="font-extrabold num text-sm whitespace-nowrap" style="color:'+color+';">'+sign+' '+fmt(t.amount)+'</span>'+
+            '<span class="font-extrabold num text-sm whitespace-nowrap" style="color:'+color+';">'+sign+' '+fmt(t.amount)+' <span class="text-[10px]">'+curBy(curOf(t)).symbol+'</span></span>'+
           '</div>'+
-          '<div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500">'+
+          '<div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[11px] text-slate-500">'+
+            '<span class="font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">'+esc(t.bank||'—')+'</span>'+
+            '<span class="font-bold px-1.5 py-0.5 rounded" style="background:'+curBy(curOf(t)).color+'14;color:'+curBy(curOf(t)).color+';">'+curBy(curOf(t)).nameAr+'</span>'+
             '<span>📅 '+(t.date? fmtFullAr(t.date) : 'بدون تاريخ')+'</span>'+
             (t.method?'<span>'+esc(t.method)+'</span>':'')+
             (t.ref?'<span class="num">رقم '+esc(t.ref)+'</span>':'')+
@@ -4929,7 +4953,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
     <div class="px-4 pt-3 pb-2 border-b border-slate-100 shrink-0 bg-slate-50">
       <div class="flex flex-wrap items-center gap-2">
-        <select id="apBank" onchange="renderApprove()" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white font-bold"></select>
+        <select id="apBank" onchange="apFillCur(); renderApprove()" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white font-bold"></select>
+        <select id="apCur" onchange="renderApprove()" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white font-bold"></select>
         <input id="apSearch" oninput="renderApprove()" placeholder="بحث بالاسم أو الرقم أو المبلغ..." class="flex-1 min-w-[150px] border border-slate-300 rounded-lg px-3 py-1.5 text-xs">
         <button id="apFutureBtn" onclick="apToggleFuture()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold"></button>
         <button onclick="apSelectAll(true)" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold">تحديد الكل</button>
