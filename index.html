@@ -1193,6 +1193,17 @@ function ruleBadge(c){
 const isGuarantee = c => !inCoverage(c) && isVisible(c);
 const isHidden    = c => !isVisible(c);
 
+function coverageDays(){ const n=parseInt(cfg.coverageDays); return isFinite(n)&&n>=0? n : 10; }
+function approveDays(){ const n=parseInt(cfg.approveDays); return isFinite(n)&&n>=0? n : 0; }
+function dateWithin(dstr, days){
+  const d=(dstr||'').slice(0,10);
+  if(!d) return true;                       // بدون تاريخ = يتعرض
+  const lim=new Date(); lim.setHours(0,0,0,0); lim.setDate(lim.getDate()+days);
+  return new Date(d+'T00:00:00') <= lim;
+}
+// الشيك داخل نطاق التغطية؟ (متأخر أو مستحق خلال المدة المحددة)
+const inHorizon = c => dateWithin(c.dueDate, coverageDays());
+
 function coverageCalc(){
   let avail=0, entered=false;
   const byCur={};
@@ -1214,21 +1225,28 @@ function coverageCalc(){
   const total=sumAmount(list);
   const cashed=sumAmount(list.filter(c=>c.status==='اتصرف'));
   // الضمانات (تأمين وخلافه) بتتشال من المطلوب — مصدرة كضمان مش للصرف
-  const excl=list.filter(c=>c.status!=='اتصرف' && !inCoverage(c));
+  const unpaid=list.filter(c=>c.status!=='اتصرف');
+  const excl=unpaid.filter(c=>!inCoverage(c));
   const guar=sumAmount(excl);
   const guarCount=excl.length;
-  const required=total-cashed-guar;
+  // اللي استحقاقه بعد النطاق: مستقبلي — مش مطلوب تغطيته دلوقتي
+  const far=unpaid.filter(c=>inCoverage(c) && !inHorizon(c));
+  const future=sumAmount(far);
+  const futureCount=far.length;
+  const required=total-cashed-guar-future;
   return {entered, byCur, bal:byCur[BASE_CUR]||0, avail, time, total, cashed,
-          guar, guarCount, required, diff: avail-required};
+          guar, guarCount, future, futureCount, days:coverageDays(),
+          required, diff: avail-required};
 }
 function updateCoverageHint(){
   const el=document.getElementById('coverHint');
   const cov=coverageCalc();
   const g=document.getElementById('guarHint');
   if(g){
-    g.innerHTML = cov.guar>0
-      ? ('<span class="text-[11px] font-bold px-2 py-1 rounded-lg" style="background:#f3e8ff;color:#6d28d9;">ضمانات غير محتسبة: '+fmt(cov.guar)+' ('+cov.guarCount+' شيك)</span>')
-      : '';
+    let h='';
+    if(cov.guar>0) h+='<span class="text-[11px] font-bold px-2 py-1 rounded-lg" style="background:#f3e8ff;color:#6d28d9;">ضمانات غير محتسبة: '+fmt(cov.guar)+' ('+cov.guarCount+' شيك)</span> ';
+    if(cov.future>0) h+='<span class="text-[11px] font-bold px-2 py-1 rounded-lg" style="background:#fff7ed;color:#c2410c;">مستقبلي بعد '+cov.days+' يوم: '+fmt(cov.future)+' ('+cov.futureCount+' شيك)</span>';
+    g.innerHTML=h;
   }
   if(!cov.entered){ el.textContent=''; el.className='text-sm font-bold'; return; }
   if(cov.diff>=0){
@@ -1277,6 +1295,9 @@ function renderPrintSummary(list){
   }
   if(cov.guar>0){
     cards += pcard('ضمانات (غير محتسبة)', cov.guar, '#faf5ff', '#6d28d9', '#e9d5ff');
+  }
+  if(cov.future>0){
+    cards += pcard('مستحق بعد '+cov.days+' يوم', cov.future, '#fff7ed', '#c2410c', '#fed7aa');
   }
   if(cov.entered){
     cards += pcard('المتاح بالبنك (مصري + دولار)', cov.avail, '#eff6ff', '#1d4ed8', '#bfdbfe');
@@ -2673,14 +2694,17 @@ function openingOfAcct(bank,cur){
 // إحصاءات حساب واحد — كلها بعملته، من غير أي تحويل
 function acctStats(bank,cur){
   const list=checksOfAcct(bank,cur).filter(isVisible);
-  const due=list.filter(c=>c.status==='مستحق' && inCoverage(c));
-  const guar=list.filter(c=>c.status==='مستحق' && !inCoverage(c));
+  const unpaid=list.filter(c=>c.status==='مستحق');
+  const due=unpaid.filter(c=>inCoverage(c) && inHorizon(c));
+  const guar=unpaid.filter(c=>!inCoverage(c));
+  const far=unpaid.filter(c=>inCoverage(c) && !inHorizon(c));
   const overdue=due.filter(c=>urgency(c)==='overdue');
   const b=banks[bank]||{};
   const bal=bankBalNum(b,cur);
   const required=sumAmount(due);
   return {bank, cur, list, due, overdue, bal, required, diff: bal-required,
           guar, guarTotal: sumAmount(guar),
+          far, farTotal: sumAmount(far),
           txnCount: txnsOfAcct(bank,cur).length};
 }
 // أرصدة كشف الحساب لحساب واحد
@@ -2760,6 +2784,7 @@ function renderBanks(){
           '<div class="flex items-center justify-between text-xs text-slate-500 mb-2">'+
             '<span>مستحق: <b class="text-slate-700 num">'+fmt(st.required)+'</b> ('+st.due.length+')</span>'+
             (st.guar.length? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#f3e8ff;color:#6d28d9;">ضمان '+fmt(st.guarTotal)+'</span>' : '')+
+            (st.far.length? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#fff7ed;color:#c2410c;">مستقبلي '+fmt(st.farTotal)+'</span>' : '')+
             (st.overdue.length?'<span class="text-red-600 font-bold">متأخر '+st.overdue.length+'</span>':'')+
           '</div>'+
           '<div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">'+
@@ -3071,6 +3096,8 @@ const CFG_DEFAULTS={
   labelSigner:'صاحب التوقيع',
   purposes:['إيجار','تأمين','قرض'],
   matchRules:[{field:'purpose', op:'eq', value:'تأمين', action:'guarantee'}],
+  coverageDays:10,      // التغطية تشمل المتأخر + الأيام دي
+  approveDays:0,        // المصادقة تعرض لحد النهارده (0 = النهارده)
   txnTypes:['تحويل','إيداع نقدي','سحب نقدي','شيك','مصاريف بنكية','فوائد','أخرى'],
   defaultBank:'',
   defaultStatus:['مستحق'],
@@ -3222,6 +3249,8 @@ function openSettings(){
   renderPwdBox();
   document.getElementById('stPurposes').value=cfg.purposes.join('\n');
   document.getElementById('stTxnTypes').value=txnTypes().join('\n');
+  document.getElementById('stCoverageDays').value=coverageDays();
+  document.getElementById('stApproveDays').value=approveDays();
   document.getElementById('stExclude').value=(cfg.excludePurposes||[]).join('، ');
   document.getElementById('stSoon').value=cfg.soonDays;
   document.getElementById('stCurrency').value=cfg.currency;
@@ -3262,6 +3291,8 @@ function saveSettings(){
   cfg.labelPurpose=document.getElementById('stLabelPurpose').value.trim()||CFG_DEFAULTS.labelPurpose;
   cfg.purposes=document.getElementById('stPurposes').value.split('\n').map(x=>x.trim()).filter(Boolean);
   if(!cfg.purposes.length) cfg.purposes=CFG_DEFAULTS.purposes.slice();
+  cfg.coverageDays=Math.max(0, parseInt(document.getElementById('stCoverageDays').value)||0);
+  cfg.approveDays=Math.max(0, parseInt(document.getElementById('stApproveDays').value)||0);
   cfg.txnTypes=document.getElementById('stTxnTypes').value.split('\n').map(x=>x.trim()).filter(Boolean);
   if(!cfg.txnTypes.length) cfg.txnTypes=CFG_DEFAULTS.txnTypes.slice();
   cfg.excludePurposes=document.getElementById('stExclude').value.split(/[،,]/).map(x=>x.trim()).filter(Boolean);
@@ -3941,8 +3972,13 @@ async function uRemove(email){
 let apSel = new Set();
 function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+let apShowFuture=false;
 function pendingTxns(){
-  return txns.filter(t => t.status !== 'confirmed');
+  return txns.filter(t => t.status !== 'confirmed' && dateWithin(t.date, approveDays()));
+}
+function pendingAll(){ return txns.filter(t => t.status !== 'confirmed'); }
+function pendingFuture(){
+  return txns.filter(t => t.status !== 'confirmed' && !dateWithin(t.date, approveDays()));
 }
 function updatePendBadge(){
   const el=document.getElementById('pendCount'); if(!el) return;
@@ -3970,7 +4006,8 @@ function closeApprove(){
 function apList(){
   const bank=(document.getElementById('apBank')||{}).value||'';
   const q=normAr(((document.getElementById('apSearch')||{}).value||'')).toLowerCase();
-  return pendingTxns().filter(t=>{
+  const base = apShowFuture ? pendingAll() : pendingTxns();
+  return base.filter(t=>{
     if(bank && bankKey(t.bank)!==bankKey(bank)) return false;
     if(!q) return true;
     return [t.desc,t.ref,t.method,String(t.amount),t.notes]
@@ -3978,6 +4015,11 @@ function apList(){
   }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
 }
 
+function apToggleFuture(){
+  apShowFuture=!apShowFuture;
+  apSel=new Set();
+  renderApprove();
+}
 function apToggle(id, on){
   if(on) apSel.add(id); else apSel.delete(id);
   apUpdateSummary();
@@ -3997,10 +4039,24 @@ function apSelectAll(on){
 function renderApprove(){
   const body=document.getElementById('apBody'); if(!body) return;
   const list=apList();
+  const nFuture=pendingFuture().length;
+  const btn=document.getElementById('apFutureBtn');
+  if(btn){
+    btn.textContent = apShowFuture ? '↩ المستحق بس' : ('📅 المستقبلية'+(nFuture?' ('+nFuture+')':''));
+    btn.className = 'rounded-lg px-2.5 py-1.5 text-xs font-bold border '+
+      (apShowFuture ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-300 hover:bg-slate-100 text-slate-700');
+    btn.classList.toggle('hidden', nFuture===0 && !apShowFuture);
+  }
+  const sub=document.getElementById('apSubtitle');
+  if(sub) sub.textContent = apShowFuture
+    ? 'بتعرض كل العمليات — بما فيها اللي لسه ماستحقتش'
+    : 'العمليات المستحقة النهارده أو فاتت'+(nFuture? (' · فيه '+nFuture+' مستقبلية مخفية') : '');
   if(!list.length){
     body.innerHTML='<div class="text-center py-12 text-slate-400"><div class="text-4xl mb-2">✅</div>'+
-      '<div class="font-bold text-sm">مفيش عمليات معلّقة</div>'+
-      '<div class="text-xs mt-1">كل الحركات اتصادق عليها</div></div>';
+      '<div class="font-bold text-sm">'+(apShowFuture?'مفيش عمليات معلّقة':'مفيش عمليات مستحقة للمصادقة')+'</div>'+
+      '<div class="text-xs mt-1">'+(!apShowFuture && nFuture
+        ? ('فيه '+nFuture+' عملية لسه ماستحقتش — اضغط «📅 المستقبلية» لعرضها')
+        : 'كل الحركات اتصادق عليها')+'</div></div>';
     apUpdateSummary(); return;
   }
   // تجميع حسب الحساب (بنك + عملة)
@@ -4866,7 +4922,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     <div class="flex items-center justify-between p-4 border-b border-slate-100 shrink-0 bg-white rounded-t-2xl">
       <div>
         <h2 class="text-lg font-extrabold text-slate-800">✅ مصادقة العمليات</h2>
-        <p class="text-[11px] text-slate-500 mt-0.5">علّم العمليات اللي ظهرت فعليًا في كشف حساب البنك</p>
+        <p id="apSubtitle" class="text-[11px] text-slate-500 mt-0.5">علّم العمليات اللي ظهرت فعليًا في كشف حساب البنك</p>
       </div>
       <button onclick="closeApprove()" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg w-9 h-9 flex items-center justify-center text-2xl leading-none">&times;</button>
     </div>
@@ -4875,6 +4931,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       <div class="flex flex-wrap items-center gap-2">
         <select id="apBank" onchange="renderApprove()" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs bg-white font-bold"></select>
         <input id="apSearch" oninput="renderApprove()" placeholder="بحث بالاسم أو الرقم أو المبلغ..." class="flex-1 min-w-[150px] border border-slate-300 rounded-lg px-3 py-1.5 text-xs">
+        <button id="apFutureBtn" onclick="apToggleFuture()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold"></button>
         <button onclick="apSelectAll(true)" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold">تحديد الكل</button>
         <button onclick="apSelectAll(false)" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold">إلغاء التحديد</button>
       </div>
@@ -4980,6 +5037,18 @@ document.addEventListener('DOMContentLoaded', async ()=>{
           مش كل شيك مصدَّر عشان يتصرف. شيك الضمان (تأمين مثلًا) بيفضل في السجل للمتابعة، لكنه مايتحسبش في «المطلوب تغطيته».
           حدّد الشرط والسلوك بنفسك — إيه اللي يتحسب، وإيه اللي يدخل المصادقة، وإيه اللي يظهر أصلًا.
         </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">نطاق التغطية <span class="text-slate-400 font-normal">(بالأيام)</span></label>
+            <input id="stCoverageDays" type="number" min="0" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <p class="text-[11px] text-slate-400 mt-1">«المطلوب تغطيته» هيشمل المتأخر + المستحق خلال المدة دي. الباقي بيتعرض كـ«مستقبلي».</p>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">نطاق المصادقة <span class="text-slate-400 font-normal">(بالأيام)</span></label>
+            <input id="stApproveDays" type="number" min="0" class="num w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <p class="text-[11px] text-slate-400 mt-1">صفر = اللي استحق النهارده أو فات بس. الباقي بيظهر بزرار «المستقبلية».</p>
+          </div>
+        </div>
         <div id="rulesList" class="space-y-2 mb-3"></div>
         <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
           <div class="text-xs font-bold text-slate-600 mb-2">إضافة قاعدة</div>
