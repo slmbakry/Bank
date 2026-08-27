@@ -3461,7 +3461,26 @@ function renderTxns(){
       '</td></tr>';
   }).join('');
   document.getElementById('txnBody').innerHTML=rows;
-  document.getElementById('txnEmpty').classList.toggle('hidden', list.length>0);
+  const emptyEl=document.getElementById('txnEmpty');
+  emptyEl.classList.toggle('hidden', list.length>0);
+  // لو الحساب ده فاضي بس فيه حركات في حساب تاني، نقول له هي فين بالظبط
+  if(!list.length){
+    const elsewhere=txns.filter(t=>
+      !(bankKey(t.bank)===bankKey(currentBank) && curOf(t)===currentCur));
+    if(elsewhere.length){
+      const grp={};
+      elsewhere.forEach(t=>{ const k=(t.bank||'—')+'|'+curOf(t); grp[k]=(grp[k]||0)+1; });
+      emptyEl.innerHTML='مفيش حركات في الحساب ده.<div class="mt-2 flex flex-wrap gap-1.5 justify-center">'+
+        Object.keys(grp).map(k=>{
+          const [bk,cu]=k.split('|'); const c=curBy(cu);
+          return '<button onclick="openAcct(\''+String(bk).replace(/'/g,"\\'")+'\',\''+cu+'\',\'txns\')" '+
+            'class="rounded-lg px-2.5 py-1.5 text-xs font-bold border" style="border-color:'+c.color+'55;background:'+c.color+'11;color:'+c.color+';">'+
+            esc(bk)+' · '+c.nameAr+' ('+grp[k]+')</button>';
+        }).join('')+'</div>';
+    } else {
+      emptyEl.textContent='مفيش حركات — اضغط «حركة جديدة»';
+    }
+  }
   updateBalanceUI();
 }
 
