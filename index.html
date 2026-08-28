@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks v20 — OSOOL Residence</title>
+<title>Banks v21 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v20</span></h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v21</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -3362,7 +3362,7 @@ function fillTxnTypeSelect(val){
 function loadTxns(){ try{ const a=JSON.parse(localStorage.getItem(TXN_KEY)); if(Array.isArray(a)) txns=a; }catch(e){} }
 function saveTxns(){ try{ localStorage.setItem(TXN_KEY, JSON.stringify(txns)); }catch(e){} scheduleSync('txns'); return true; }
 
-function txnsOf(bank){ return txns.filter(t=>bankKey(t.bank)===bankKey(bank) && (!currentCur || curOf(t)===currentCur)); }
+function txnsOf(bank){ return txns.filter(t=>bankKey(t.bank)===bankKey(bank) && (!currentCur || curOf(t)===currentCur) && txnVisible(t)); }
 function signed(t){ return (t.dir==='in'?1:-1)*(Number(t.amount)||0); }
 
 // الرصيد الافتتاحي محفوظ على البنك
@@ -3384,8 +3384,9 @@ function syncCheckTxns(){
   const byCheck={};
   txns.forEach(t=>{ if(t.srcCheckId) byCheck[t.srcCheckId]=t; });
   checks.forEach(c=>{
-    // القاعدة هي اللي بتحدد: يدخل طابور المصادقة ولا لأ
-    const live = (c.status==='مستحق' || c.status==='اتصرف') && inReconcile(c);
+    // الحركة بتفضل مسجّلة دايمًا (السجل لازم يبقى كامل).
+    // القاعدة بتتحكم في ظهورها في طابور المصادقة بس — مش في وجودها.
+    const live = (c.status==='مستحق' || c.status==='اتصرف');
     let t=byCheck[c.id];
     if(!live){                       // مرتجع/ملغي/ضمان/مخفي: شيل الحركة
       if(t){ txns=txns.filter(x=>x.id!==t.id); changed=true; }
@@ -4086,12 +4087,30 @@ let apSel = new Set();
 function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 let apShowFuture=false;
-function pendingTxns(){
-  return txns.filter(t => t.status !== 'confirmed' && dateWithin(t.date, approveDays()));
+// هل الحركة دي تدخل طابور المصادقة؟ (القاعدة بتتحكم — من غير ما تتمسح)
+function txnInReconcile(t){
+  if(t.srcCheckId){
+    const c=checks.find(x=>x.id===t.srcCheckId);
+    if(c) return inReconcile(c);
+  }
+  // حركة يدوية: بنطبّق القواعد اللي على البنك عليها
+  const r=matchRules().find(r=>r.field==='bank' && ruleHits({bank:t.bank}, r));
+  return r ? r.reconcile!==false : true;
 }
-function pendingAll(){ return txns.filter(t => t.status !== 'confirmed'); }
+function txnVisible(t){
+  if(t.srcCheckId){
+    const c=checks.find(x=>x.id===t.srcCheckId);
+    if(c) return isVisible(c);
+  }
+  const r=matchRules().find(r=>r.field==='bank' && ruleHits({bank:t.bank}, r));
+  return r ? r.visible!==false : true;
+}
+function pendingTxns(){
+  return txns.filter(t => t.status !== 'confirmed' && txnInReconcile(t) && dateWithin(t.date, approveDays()));
+}
+function pendingAll(){ return txns.filter(t => t.status !== 'confirmed' && txnInReconcile(t)); }
 function pendingFuture(){
-  return txns.filter(t => t.status !== 'confirmed' && !dateWithin(t.date, approveDays()));
+  return txns.filter(t => t.status !== 'confirmed' && txnInReconcile(t) && !dateWithin(t.date, approveDays()));
 }
 function updatePendBadge(){
   const el=document.getElementById('pendCount'); if(!el) return;
@@ -4606,7 +4625,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v20-2026-08-27';
+const APP_VERSION = 'v21-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
@@ -5181,6 +5200,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
         <p class="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3">
           مش كل شيك مصدَّر عشان يتصرف. شيك الضمان (تأمين مثلًا) بيفضل في السجل للمتابعة، لكنه مايتحسبش في «المطلوب تغطيته».
           حدّد الشرط والسلوك بنفسك — إيه اللي يتحسب، وإيه اللي يدخل المصادقة، وإيه اللي يظهر أصلًا.
+          <b>البيانات مابتتمسحش أبدًا</b> — القواعد بتتحكم في العرض والحساب بس.
         </p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div>
