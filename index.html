@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks v19 — OSOOL Residence</title>
+<title>Banks v20 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v19</span></h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v20</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -124,8 +124,8 @@ window.loadSupabase = function(){
       </div>
     </div>
     <div class="flex items-center gap-1.5 md:gap-2 no-print flex-wrap justify-end">
-      <span id="cloudState" class="text-[11px] font-bold px-2 py-1 rounded-lg border bg-slate-50 text-slate-600 border-slate-200">⏳ بيحمّل...</span>
-      <span id="roleBadge" class="hidden md:inline text-[11px] font-bold px-2 py-1 rounded-lg border bg-slate-100 text-slate-600 border-slate-200">—</span>
+      <span id="cloudState" class="text-[10px] md:text-[11px] font-bold px-1.5 md:px-2 py-1 rounded-lg border bg-slate-50 text-slate-600 border-slate-200">⏳</span>
+      <span id="roleBadge" class="hidden lg:inline text-[11px] font-bold px-2 py-1 rounded-lg border bg-slate-100 text-slate-600 border-slate-200">—</span>
 
       <button id="homeBtn" onclick="backToBanks()" class="hidden bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg text-sm font-bold">🏦 البنوك</button>
 
@@ -150,6 +150,7 @@ window.loadSupabase = function(){
             <div id="whoAmI" class="text-xs font-bold text-slate-700 truncate"></div>
             <div id="roleBadgeMobile" class="text-[11px] text-slate-400 mt-0.5"></div>
           </div>
+          <button onclick="closeMoreMenu();openBanksAdmin()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">🏦 إدارة البنوك</button>
           <button onclick="closeMoreMenu();openUsers()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">👥 المستخدمين والصلاحيات</button>
           <button onclick="closeMoreMenu();openSettings()" class="needs-admin w-full text-right px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">⚙ الإعدادات</button>
           <button onclick="closeMoreMenu();exportBackup()" class="w-full text-right px-4 py-2.5 text-sm font-bold text-purple-700 hover:bg-purple-50">💾 نسخة كاملة</button>
@@ -172,10 +173,7 @@ window.loadSupabase = function(){
   <div id="banksView" class="no-print">
     <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
       <h2 class="text-lg font-extrabold text-slate-800">البنوك</h2>
-      <div class="flex items-center gap-2 no-print">
-        <button onclick="openBanksAdmin()" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold">⚙ إدارة البنوك</button>
-        <button onclick="openBankForm()" class="needs-admin bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold">+ بنك جديد</button>
-      </div>
+
     </div>
     <div id="banksTotals" class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 mb-3 md:mb-4"></div>
     <div id="banksGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4"></div>
@@ -2839,6 +2837,7 @@ function addBankPrompt(){
 let currentTab='checks';
 function setBankTab(tab){
   txnSource='all'; txnShowFuture=false;
+  if(typeof CLOUD_READY!=='undefined' && CLOUD_READY) setTimeout(saveView,0);
   currentTab = (tab==='txns') ? 'txns' : 'checks';
   const on ='px-4 py-2 rounded-t-lg text-sm font-bold bg-white text-slate-800 border border-b-0 border-slate-200 shadow-sm';
   const off='px-4 py-2 rounded-t-lg text-sm font-bold bg-slate-200/70 text-slate-600 hover:bg-slate-200';
@@ -2899,9 +2898,11 @@ function openBank(name, tab){
   clearSelection();
   applyDefaultFilters(); buildStatusDD();
   setBankTab(tab || 'checks');
+  saveView();
   window.scrollTo(0,0);
 }
 function backToBanks(){
+  try{ localStorage.removeItem(VIEW_KEY); }catch(e){}
   document.getElementById('bankView').classList.add('hidden');
   document.getElementById('banksView').classList.remove('hidden');
   document.getElementById('homeBtn').classList.add('hidden');
@@ -4371,6 +4372,21 @@ async function doLogout(){
 // نسخة مجمّدة من بيانات المتصفح تتاخد مرة واحدة قبل أي كتابة سحابية،
 // عشان تفضل شبكة أمان حقيقية مهما اتغيّرت البيانات الحية بعد كده.
 const PRE_KEY='osool_pre_cloud_backup_v1';
+const VIEW_KEY='osool_last_view_v1';
+function saveView(){
+  try{ localStorage.setItem(VIEW_KEY, JSON.stringify({
+    bank: currentBank||'', cur: currentCur||'', tab: currentTab||'checks'
+  })); }catch(e){}
+}
+function restoreView(){
+  let v=null;
+  try{ v=JSON.parse(localStorage.getItem(VIEW_KEY)); }catch(e){}
+  if(!v || !v.bank || !banks[v.bank]) return false;
+  const codes=bankCurs(banks[v.bank]);
+  const cur = codes.includes(v.cur) ? v.cur : (codes[0]||'');
+  openAcct(v.bank, cur, v.tab==='txns'?'txns':'checks');
+  return true;
+}
 function ensurePreBackup(){
   if(localStorage.getItem(PRE_KEY)) return;
   const g=(k,d)=>{ try{ const v=JSON.parse(localStorage.getItem(k)); return v==null? d : v; }catch(e){ return d; } };
@@ -4590,7 +4606,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v19-2026-08-27';
+const APP_VERSION = 'v20-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
@@ -4660,6 +4676,7 @@ async function boot(){
   buildStatusDD();
   syncCheckTxns();
   renderAll();
+  restoreView();          // نرجّعك لنفس الحساب والتبويب اللي كنت فيه
   fetchRate(false);
   startRealtime();
   cloudStatus('ok');
