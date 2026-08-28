@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks v21 — OSOOL Residence</title>
+<title>Banks v22 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v21</span></h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v22</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -1138,15 +1138,15 @@ const RULE_FIELDS = {
   status:   ()=> 'الحالة'
 };
 // كل قاعدة بتحدد سلوكها بنفسها — مفيش سلوك مثبّت في الكود
+// الشيكات والحركات بتفضل ظاهرة ومسجّلة دايمًا — القواعد بتتحكم في الحساب والمصادقة بس
 const RULE_EFFECTS = {
-  coverage:  {ar:'يتحسب في «المطلوب تغطيته»',       def:true},
-  reconcile: {ar:'يدخل طابور المصادقة',             def:true},
-  visible:   {ar:'يظهر في الجدول والتقارير',        def:true},
-  cashedNormal:{ar:'لو اتصرف فعليًا يرجع حركة عادية', def:true}
+  coverage:  {ar:'يتحسب في «المطلوب تغطيته»',        def:true},
+  reconcile: {ar:'يدخل طابور المصادقة',              def:true},
+  cashedNormal:{ar:'لو اتصرف فعليًا يرجع عادي',       def:true}
 };
 const RULE_PRESETS = {
-  guarantee:{label:'ضمان', color:'#7c3aed', coverage:false, reconcile:false, visible:true,  cashedNormal:true},
-  hide:     {label:'مستبعد', color:'#64748b', coverage:false, reconcile:false, visible:false, cashedNormal:false}
+  guarantee:{label:'ضمان',      color:'#7c3aed', coverage:false, reconcile:false, cashedNormal:true},
+  hide:     {label:'خارج المتابعة', color:'#64748b', coverage:false, reconcile:false, cashedNormal:false}
 };
 // ترحيل القواعد القديمة (action) للشكل الجديد
 function normRule(r){
@@ -1158,6 +1158,7 @@ function normRule(r){
     ['coverage','reconcile','visible','cashedNormal'].forEach(k=>out[k]=p[k]);
     delete out.action;
   }
+  delete out.visible;   // خيار قديم اتشال — الشيك بيفضل ظاهر دايمًا
   Object.keys(RULE_EFFECTS).forEach(k=>{ if(out[k]===undefined) out[k]=RULE_EFFECTS[k].def; });
   if(!out.label) out.label='مميّز';
   if(!out.color) out.color='#7c3aed';
@@ -1188,13 +1189,13 @@ function effect(c, key){
 }
 const inCoverage  = c => effect(c,'coverage');
 const inReconcile = c => effect(c,'reconcile');
-const isVisible   = c => effect(c,'visible');
+const isVisible   = () => true;   // مفيش إخفاء — السجل بيفضل كامل دايمًا
 // اسم الشارة اللي تظهر جنب الشيك
 function ruleBadge(c){
   const r=ruleFor(c);
   if(!r) return null;
   if(c.status==='اتصرف' && r.cashedNormal) return null;
-  if(r.coverage!==false && r.reconcile!==false && r.visible!==false) return null;
+  if(r.coverage!==false && r.reconcile!==false) return null;
   return r;
 }
 // أسماء متوافقة مع باقي الكود
@@ -4097,14 +4098,7 @@ function txnInReconcile(t){
   const r=matchRules().find(r=>r.field==='bank' && ruleHits({bank:t.bank}, r));
   return r ? r.reconcile!==false : true;
 }
-function txnVisible(t){
-  if(t.srcCheckId){
-    const c=checks.find(x=>x.id===t.srcCheckId);
-    if(c) return isVisible(c);
-  }
-  const r=matchRules().find(r=>r.field==='bank' && ruleHits({bank:t.bank}, r));
-  return r ? r.visible!==false : true;
-}
+function txnVisible(){ return true; }   // كشف الحساب بيفضل كامل
 function pendingTxns(){
   return txns.filter(t => t.status !== 'confirmed' && txnInReconcile(t) && dateWithin(t.date, approveDays()));
 }
@@ -4625,7 +4619,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v21-2026-08-27';
+const APP_VERSION = 'v22-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
@@ -5200,7 +5194,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
         <p class="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3">
           مش كل شيك مصدَّر عشان يتصرف. شيك الضمان (تأمين مثلًا) بيفضل في السجل للمتابعة، لكنه مايتحسبش في «المطلوب تغطيته».
           حدّد الشرط والسلوك بنفسك — إيه اللي يتحسب، وإيه اللي يدخل المصادقة، وإيه اللي يظهر أصلًا.
-          <b>البيانات مابتتمسحش أبدًا</b> — القواعد بتتحكم في العرض والحساب بس.
+          <b>الشيكات والحركات بتفضل ظاهرة ومسجّلة دايمًا</b> — القواعد بتتحكم في الحساب والمصادقة بس.
         </p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div>
