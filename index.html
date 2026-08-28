@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1e293b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Banks">
-<title>Banks v18 — OSOOL Residence</title>
+<title>Banks v19 — OSOOL Residence</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -98,7 +98,7 @@ window.loadSupabase = function(){
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
     <div class="text-center mb-5">
       <div class="w-14 h-14 mx-auto rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 text-white flex items-center justify-center font-extrabold text-xl shadow mb-3">OS</div>
-      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v18</span></h1>
+      <h1 class="text-lg font-extrabold text-slate-800" dir="ltr">Banks <span class="text-xs font-bold text-slate-400">v19</span></h1>
       <p class="text-xs text-slate-500 mt-1">OSOOL Residence</p>
     </div>
     <div id="loginMsg" class="hidden bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -449,6 +449,8 @@ window.loadSupabase = function(){
         <button id="txnSrc_all"    onclick="setTxnSource('all')"></button>
         <button id="txnSrc_check"  onclick="setTxnSource('check')"></button>
         <button id="txnSrc_manual" onclick="setTxnSource('manual')"></button>
+        <span class="w-px h-4 bg-slate-200 mx-1"></span>
+        <button id="txnFutureBtn" onclick="toggleTxnFuture()"></button>
       </div>
 
       <div class="border border-slate-200 rounded-lg overflow-x-auto">
@@ -2836,7 +2838,7 @@ function addBankPrompt(){
 }
 let currentTab='checks';
 function setBankTab(tab){
-  txnSource='all';
+  txnSource='all'; txnShowFuture=false;
   currentTab = (tab==='txns') ? 'txns' : 'checks';
   const on ='px-4 py-2 rounded-t-lg text-sm font-bold bg-white text-slate-800 border border-b-0 border-slate-200 shadow-sm';
   const off='px-4 py-2 rounded-t-lg text-sm font-bold bg-slate-200/70 text-slate-600 hover:bg-slate-200';
@@ -3412,10 +3414,12 @@ function syncCheckTxns(){
 // ---------- شاشة الحركات ----------
 let txnFilter='all';
 let txnSource='all';   // all | check | manual
+let txnShowFuture=false;
 function openTxns(){ setBankTab('txns'); }
 function closeTxns(){ setBankTab('checks'); }
 function setTxnFilter(f){ txnFilter=f; renderTxns(); }
 function setTxnSource(v){ txnSource=v; renderTxns(); }
+function toggleTxnFuture(){ txnShowFuture=!txnShowFuture; renderTxns(); }
 const isCheckTxn = t => !!t.srcCheckId;
 
 function renderTxns(){
@@ -3466,6 +3470,19 @@ function renderTxnsInner(){
   const sMan=byStatus.filter(t=>!isCheckTxn(t)).reduce((a,t)=>a+signed(t),0);
   if(txnSource==='check')  list=list.filter(isCheckTxn);
   if(txnSource==='manual') list=list.filter(t=>!isCheckTxn(t));
+
+  // نفس منطق المصادقة: المستحق دلوقتي + اللي جاي خلال المدة المحددة
+  const beyond = list.filter(t=>!dateWithin(t.date, approveDays())).length;
+  if(!txnShowFuture) list=list.filter(t=>dateWithin(t.date, approveDays()));
+  const fb=document.getElementById('txnFutureBtn');
+  if(fb){
+    fb.innerHTML = txnShowFuture ? '↩ المستحق بس'
+      : ('📅 المستقبلية'+(beyond?' <span class="opacity-70">('+beyond+')</span>':''));
+    fb.className = txnShowFuture
+      ? 'bg-amber-500 text-white rounded-lg px-2.5 py-1 text-[11px] font-bold'
+      : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg px-2.5 py-1 text-[11px] font-bold';
+    fb.classList.toggle('hidden', beyond===0 && !txnShowFuture);
+  }
   [['all','الكل',byStatus.length,sChk+sMan],
    ['check','🧾 شيكات',nChk,sChk],
    ['manual','💵 حركات أخرى',nMan,sMan]].forEach(([k,lbl,n,sum])=>{
@@ -3477,12 +3494,17 @@ function renderTxnsInner(){
       ? 'bg-slate-800 text-white rounded-lg px-2.5 py-1 text-[11px] font-bold'
       : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg px-2.5 py-1 text-[11px] font-bold';
   });
-  list.sort((a,x)=>(a.date||'').localeCompare(x.date||'') || (a.id>x.id?1:-1));
+  const cmp=(a,x)=>(a.date||'').localeCompare(x.date||'') || (a.id>x.id?1:-1);
+  list.sort(cmp);
 
-  // رصيد جارٍ
+  // الرصيد الجاري يتحسب من كل حركات الحساب بالترتيب — مش من المعروض بس،
+  // عشان يفضل صحيح مهما اتفلتر العرض
+  const balMap={};
   let run=openingOf(currentBank);
+  txnsOf(currentBank).slice().sort(cmp).forEach(t=>{ run+=signed(t); balMap[t.id]=run; });
+
   const rows=list.map(t=>{
-    run+=signed(t);
+    run=balMap[t.id];
     const badge = t.status==='confirmed'
       ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">مؤكدة</span>'
       : '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">بانتظار المطابقة</span>';
@@ -4568,7 +4590,7 @@ async function repairUpload(){
 // ---------------------------------------------------------------------
 //  الإقلاع
 // ---------------------------------------------------------------------
-const APP_VERSION = 'v18-2026-08-27';
+const APP_VERSION = 'v19-2026-08-27';
 function diag(line){
   const d=document.getElementById('diagBox'); if(!d) return;
   d.innerHTML += line+'<br>';
